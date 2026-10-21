@@ -1,0 +1,4 @@
+registration_notification_subject==HighQSoft Download Area Registration
+registration_notification_message==Thank you %name% for registering to the HighQSoft Download Area.\n\nComplete your registration by opening following confirmation link: %link%\n\nThis notification was sent to %email%
+registration_notification_approved_subject==HighQSoft Download Area Registration
+registration_notification_approved_message==Your registration for %name% has been approved.\n\nYou can now log into the HighQSoft Download Area: %link%\n\nThis notification was sent to %email%

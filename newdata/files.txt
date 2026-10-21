@@ -1,0 +1,4 @@
+./ford/HighQSoft Files/products/GCP/Plankton-ParquetConverter/23.1/gcp-parquet-converter-23.1.6.zip 108419890
+./ford/HighQSoft Files/products/GCP/Plankton-ParquetConverter/23.1/gcp-parquet-converter-23.1.6.tgz 108380859
+./tuev-sued/MDM/MDM-23.2.7.zip 57630
+./audi/MDMABM/Archiv/MDMABM_Laderampen_1.2.5-rc1.zip 2621440

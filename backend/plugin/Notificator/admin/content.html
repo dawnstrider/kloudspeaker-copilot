@@ -1,0 +1,93 @@
+<script id="kloudspeaker-tmpl-plugin-notificator-notificationdetails" type="text/x-jquery-tmpl">
+	<div id="kloudspeaker-notificator-notificationdetails-content">
+		<legend>${notification.name}</legend>
+				
+		<div class="kloudspeaker-notificator-notificationdetails-section">
+			<div class="kloudspeaker-notificator-notificationdetails-events">
+			</div>
+		</div>
+
+		<div class="kloudspeaker-notificator-notificationdetails-section">
+			<div class="kloudspeaker-notificator-notificationdetails-eventusersgroups">
+			</div>
+		</div>
+
+		<div class="kloudspeaker-notificator-notificationdetails-section">
+			<div class="kloudspeaker-notificator-notificationdetails-usersgroups">
+			</div>
+		</div>
+
+		<div class="kloudspeaker-notificator-notificationdetails-section">		
+			<div class="kloudspeaker-notificator-notificationdetails-message-title">
+				<h4 class="localized" text-key="pluginNotificatorNotificationMessageTitle"></h4>
+				<a class="kloudspeaker-notificator-notificationdetails-editmessage btn" href="javascript: void(0);" class="btn"><i class="fa fa-edit"></i></a>
+			</div>
+			
+			<div class="kloudspeaker-notificator-notificationdetails-messagetitle"></div>
+			
+			<div class="kloudspeaker-notificator-notificationdetails-message well">
+			</div>
+		</div>
+	</div>
+</script>
+
+<script id="kloudspeaker-tmpl-notificator-editmessage" type="text/x-jquery-tmpl">
+	<div class="kloudspeaker-notificator-editmessage-dialog">
+		<form class="form-horizontal">
+			<div class="control-group">
+				<label class="control-label localized" text-key="pluginNotificatorNotificationEditMessageTitle"></label>
+				<div class="controls">
+					<input type="text" id="titleField">
+				</div>
+			</div>
+
+			<div class="control-group">
+				<label class="control-label localized" text-key="pluginNotificatorNotificationEditMessageMsg"></label>
+				<div class="controls">
+					<textarea id="messageField" rows="5"></textarea>
+				</div>
+			</div>
+			
+			<div class="accordion" id="kloudspeaker-notificator-editmessage-variables">
+				<div class="accordion-group">
+					<div class="accordion-heading">
+						<a class="accordion-toggle localized" text-key="pluginNotificatorNotificationEditMessageVariablesTitle" data-toggle="collapse" data-parent="#accordion2" href="#collapseTwo"></a>
+					</div>
+					<div id="collapseTwo" class="accordion-body collapse">
+						<div class="accordion-inner localized" text-key="pluginNotificatorNotificationEditMessageVariablesTxt"></div>
+					</div>
+				</div>
+			</div>
+		</form>
+	</div>
+</script>
+
+<script id="kloudspeaker-tmpl-notificator-filtereditor" type="text/x-jquery-tmpl">
+	<div id="kloudspeaker-notificator-filtereditor-content" class="loading">
+		<div id="kloudspeaker-notificator-filtereditor-event">
+			<span class="name">${event.type}</span>
+		</div>
+		<table id="kloudspeaker-notificator-filtereditor-list" class="table">
+		</table>
+		
+		<h4 class="localized" text-key="pluginNotificatorNotificationNewFilter"></h4>
+		<div id="kloudspeaker-notificator-filtereditor-new">
+			<select id="kloudspeaker-notificator-filtereditor-new-type"></select>
+			<div id="kloudspeaker-notificator-filtereditor-new-value"></div>			
+			<button id="kloudspeaker-notificator-filtereditor-new-add" class="btn btn-success"><i class="fa fa-plus"></i></button>
+		</div>
+	</div>
+</script>
+
+<script id="kloudspeaker-tmpl-notificator-filtereditor-listremove" type="text/x-jquery-tmpl">
+	<div><i class='fa fa-trash'></i></div>
+</script>
+
+<script id="kloudspeaker-tmpl-notificator-filtereditor-folder" type="text/x-jquery-tmpl">
+	<input type="text" class="kloudspeaker-notificator-filtereditor-folder-value" disabled></input>
+	<button class="kloudspeaker-notificator-filtereditor-folder-select" class="btn">...</button>
+</script>
+
+<script id="kloudspeaker-tmpl-notificator-filtereditor-string" type="text/x-jquery-tmpl">
+	<input type="text" class="kloudspeaker-notificator-filtereditor-string-value"></input>
+</script>
