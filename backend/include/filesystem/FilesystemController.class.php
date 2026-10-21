@@ -24,6 +24,8 @@ class FilesystemController {
 	private $env;
 	private $metadata;
 	private $allowedUploadTypes;
+	public $forbiddenUploadTypes;
+	public $ignoredItems;
 	private $permissionCache = array();
 	private $folderCache = array();
 	private $infoCache = array();
@@ -1723,6 +1725,7 @@ class FileEvent extends Event {
 
 class MultiFileEvent extends Event {
 	private $items;
+	public $info;
 
 	static function download($items) {
 		return new MultiFileEvent($items, FileSystemController::EVENT_TYPE_FILE, FileEvent::DOWNLOAD);

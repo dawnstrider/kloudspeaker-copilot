@@ -3,7 +3,7 @@
 /**
  * Watermarking.plugin.class.php
  *
- * Copyright 2015- Samuli Järvelä
+ * Copyright 2015- Samuli Jï¿½rvelï¿½
  * Released under GPL license.
  *
  * License: http://www.kloudspeaker.com/license.php
@@ -12,6 +12,8 @@
 require_once "WatermarkingManager.class.php";
 
 class Watermarking extends PluginBase {
+	public $watermarkingManager;
+
 	public function setup() {
 		$this->watermarkingManager = new WatermarkingManager($this->env, $this->getSettings());
 		$this->env->filesystem()->registerActionInterceptor("plugin-watermarking", $this->watermarkingManager);

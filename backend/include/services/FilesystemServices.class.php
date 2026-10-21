@@ -85,16 +85,19 @@ class FilesystemServices extends ServicesBase {
 
 	private function processMultiItemAction() {
 		if (count($this->path) != 1) {
-			throw invalidRequestException();
+			throw $this->invalidRequestException();
 		}
 
 		$data = $this->request->data;
-		if (!isset($data['action']) or !isset($data['items']) or count($data['items']) < 1) {
+		if (!is_array($data) or !isset($data['action']) or !is_string($data['action']) or !isset($data['items']) or !is_array($data['items']) or count($data['items']) < 1) {
 			throw $this->invalidRequestException();
 		}
 
 		$items = array();
 		foreach ($data['items'] as $i) {
+			if (!is_array($i) or !isset($i['id'])) {
+				throw $this->invalidRequestException();
+			}
 			$items[] = $this->item($i["id"]);
 		}
 

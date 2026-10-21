@@ -118,12 +118,21 @@ class Util {
 	}
 
 	static function convertCharset($v, $charset = NULL, $encode = TRUE) {
+		if ($v === NULL) {
+			$v = '';
+		}
 		if (!$charset or $charset === NULL) {
 			if ($encode) {
-				return utf8_encode($v);
+				return mb_convert_encoding($v, 'UTF-8', 'ISO-8859-1');
 			}
 
-			return utf8_decode($v);
+			$substitute = mb_substitute_character();
+			mb_substitute_character(63);
+			try {
+				return mb_convert_encoding($v, 'ISO-8859-1', 'UTF-8');
+			} finally {
+				mb_substitute_character($substitute);
+			}
 		}
 		if ($charset == "windows") {
 			if ($encode) {

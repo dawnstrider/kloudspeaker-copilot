@@ -1,0 +1,5 @@
+/PHPMailer/**/*.php text eol=lf
+/phpass/**/*.php text eol=lf
+/fpdf/**/*.php -text
+/fpdi/**/*.php -text
+/zipstream/**/*.php -text

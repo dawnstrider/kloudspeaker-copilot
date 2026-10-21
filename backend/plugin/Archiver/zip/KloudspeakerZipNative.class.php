@@ -9,187 +9,153 @@
  * License: http://www.kloudspeaker.com/license.php
  */
 
-class KloudspeakerZipNative implements KloudspeakerCompressor {
-	private static $availableCommands = NULL;
-
-	private static function availableCommands() {
-		if (self::$availableCommands != NULL) {
-			return self::$availableCommands;
-		}
-
-		self::$availableCommands = array();
-
-		exec('tar --version', $o, $ctar);
-		if ($ctar == 0) {
-			self::$availableCommands['application/x-tar'] = array('cmd' => 'tar', 'argc' => '-cf', 'ext' => 'tar');
-			exec('gzip --version', $o, $c);
-			if ($c == 0) {
-				self::$availableCommands['application/x-gzip'] = array('cmd' => 'tar', 'argc' => '-czf', 'ext' => 'tgz');
-			}
-			exec('bzip2 --version', $o, $c);
-			if ($c == 0) {
-				self::$availableCommands['application/x-bzip2'] = array('cmd' => 'tar', 'argc' => '-cjf', 'ext' => 'tbz');
-			}
-		}
-
-		exec('zip --version', $o, $c);
-		if ($c == 0) {
-			self::$availableCommands['application/zip'] = array('cmd' => 'zip', 'argc' => '-r9', 'ext' => 'zip');
-		}
-
-		exec('rar --version', $o, $c);
-		if ($c == 0) {
-			self::$availableCommands['application/x-rar'] = array('cmd' => 'rar', 'argc' => 'a inul', 'ext' => 'rar');
-		}
-
-		exec('7z --help', $o, $c);
-		if ($c == 0) {
-			self::$availableCommands['application/x-7z-compressed'] = array('cmd' => '7z', 'argc' => 'a', 'ext' => '7z');
-
-			if (empty(self::$availableCommands['application/x-gzip'])) {
-				self::$availableCommands['application/x-gzip'] = array('cmd' => '7z', 'argc' => 'a -tgzip', 'ext' => 'tar.gz');
-			}
-			if (empty(self::$availableCommands['application/x-bzip2'])) {
-				self::$availableCommands['application/x-bzip2'] = array('cmd' => '7z', 'argc' => 'a -tbzip2', 'ext' => 'tar.bz');
-			}
-			if (empty(self::$availableCommands['application/zip'])) {
-				self::$availableCommands['application/zip'] = array('cmd' => '7z', 'argc' => 'a -tzip -l', 'ext' => 'zip');
-			}
-			if (empty(self::$availableCommands['application/x-tar'])) {
-				self::$availableCommands['application/x-tar'] = array('cmd' => '7z', 'argc' => 'a -ttar -l', 'ext' => 'tar');
-			}
-		}
-
-		return self::$availableCommands;
-	}
-
-	private static function command($mode) {
-		$cmds = self::availableCommands();
-		if (!isset($cmds[$mode])) {
-			return NULL;
-		}
-
-		return $cmds[$mode];
-	}
-
-	private $env;
-	private $name;
+class KloudspeakerZipNative extends KloudspeakerZipCompressor {
 	private $cmd;
 	private $files = array();
+	private $workspace = NULL;
 
-	function __construct($env) {
-		$this->env = $env;
-		$this->name = sys_get_temp_dir() . DIRECTORY_SEPARATOR . uniqid('Kloudspeaker', true) . 'zip';
-		$this->cmd = self::command('application/zip');
-		if ($this->cmd == NULL) {
-			throw new ServiceException("INVALID_CONFIGURATION", "No native zip library found");
+	private static function command() {
+		$extensions = PHP_OS_FAMILY === 'Windows' ? array('.exe', '.com', '') : array('');
+		foreach (array('zip', '7z') as $name) {
+			foreach (explode(PATH_SEPARATOR, (string) getenv('PATH')) as $directory) {
+				if ($directory === '') continue;
+				foreach ($extensions as $extension) {
+					$file = rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $name . $extension;
+					if (is_file($file) and is_executable($file)) return array('path' => $file, 'name' => $name);
+				}
+			}
 		}
+		return NULL;
+	}
+
+	public function __construct($env) {
+		$this->cmd = self::command();
+		if ($this->cmd === NULL or !function_exists('proc_open')) throw new ServiceException("INVALID_CONFIGURATION", "Command ZIP creation requires zip or 7z and proc_open");
+		parent::__construct($env);
 	}
 
 	public function acceptFolders() {
-		return true;
+		return TRUE;
+	}
+
+	private function prepareWorkspace() {
+		if ($this->workspace !== NULL) return;
+		$this->workspace = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'Kloudspeaker-zip-work-' . bin2hex(random_bytes(16));
+		if (!mkdir($this->workspace, 0700) or !mkdir($this->workspace . '/input', 0700)) $this->fail("Could not create private archive workspace");
+	}
+
+	private function stage($name, $path, $schedule) {
+		$this->ensureWritable();
+		if (!is_string($path) or (!is_file($path) and !is_dir($path)) or !is_readable($path) or is_link($path)) $this->fail("Archive source is not readable or is a symbolic link");
+		$name = $this->reserveName($name);
+		$this->prepareWorkspace();
+		$target = $this->workspace . '/input/' . $name;
+		if (is_dir($path)) {
+			if (!is_dir($target) and !mkdir($target, 0700, TRUE)) $this->fail("Could not stage archive directory");
+			if ($schedule) $this->files[] = './' . $name . '/';
+			foreach (scandir($path) as $entry) {
+				if ($entry === '.' or $entry === '..') continue;
+				$this->stage($name . '/' . $entry, $path . DIRECTORY_SEPARATOR . $entry, FALSE);
+			}
+		} else {
+			if (!is_dir(dirname($target)) and !mkdir(dirname($target), 0700, TRUE)) $this->fail("Could not stage archive directory");
+			if (!copy($path, $target)) $this->fail("Could not stage archive file");
+			if ($schedule) $this->files[] = './' . $name;
+		}
 	}
 
 	public function add($name, $path, $size = 0) {
-		if (is_file($path) || is_dir($path)) {
-			$this->files[] = realpath($path);
+		try {
+			$this->stage($name, $path, TRUE);
+		} catch (ServiceException $exception) {
+			throw $exception;
+		} catch (Exception $exception) {
+			$this->fail("Could not stage archive source");
 		}
 	}
 
 	public function addEmptyDir($name) {
-		//TODO
+		$name = $this->reserveName($name);
+		$this->prepareWorkspace();
+		$target = $this->workspace . '/input/' . $name;
+		if (!is_dir($target) and !mkdir($target, 0700, TRUE)) $this->fail("Could not stage empty archive directory");
+		$this->files[] = './' . $name . '/';
 	}
 
-	function common_path($dirList) {
-		$dirList = array_unique($dirList);
-		while (1 !== count($dirList)) {
-			$dirList = array_map('dirname', $dirList);
-			$dirList = array_unique($dirList);
-		}
-		reset($dirList);
-
-		return current($dirList);
-	}
-
-	function relative_path($from, $to) {
-		$from = explode(DIRECTORY_SEPARATOR, $from);
-		$to = explode(DIRECTORY_SEPARATOR, $to);
-		foreach ($from as $depth => $dir) {
-			if (isset($to[$depth])) {
-				if ($dir === $to[$depth]) {
-					unset($to[$depth]);
-					unset($from[$depth]);
-				} else {
-					break;
-				}
-			}
-		}
-		//$rawresult = implode('/', $to);
-		for ($i = 0; $i < count($from) - 1; $i++) {
-			array_unshift($to, '..');
-		}
-		$result = implode(DIRECTORY_SEPARATOR, $to);
-		return $result;
+	protected function runCommand($arguments, $directory) {
+		$descriptors = array(0 => array('pipe', 'r'), 1 => array('file', $this->workspace . '/stdout.log', 'ab'), 2 => array('file', $this->workspace . '/stderr.log', 'ab'));
+		$process = proc_open($arguments, $descriptors, $pipes, $directory, NULL, array('bypass_shell' => TRUE));
+		if (!is_resource($process)) return -1;
+		fclose($pipes[0]);
+		return proc_close($process);
 	}
 
 	public function finish() {
-		$common_path_use = false;
-		$common_path = $this->common_path($this->files);
-		if (is_dir($common_path)) {
-			$common_path_use = true;
-			if (substr($common_path, -1) != DIRECTORY_SEPARATOR) {
-				$common_path .= DIRECTORY_SEPARATOR;
-			}
-		}
-
-		$argc = '';
-
-		foreach ($this->files as $file) {
-			if ($common_path_use) {
-				$argc .= escapeshellarg('.' . DIRECTORY_SEPARATOR . $this->relative_path($common_path, $file)) . ' ';
+		if ($this->finished) return TRUE;
+		$this->ensureWritable();
+		try {
+			if (!$this->files) {
+				require_once __DIR__ . '/KloudspeakerZipRaw.class.php';
+				$empty = new KloudspeakerZipRaw($this->env);
+				try {
+					$empty->finish();
+					if (!copy($empty->filename(), $this->name)) $this->fail("Could not create empty archive");
+				} finally {
+					$empty->cleanup();
+				}
 			} else {
-				$argc .= escapeshellarg($file) . ' ';
+				$output = $this->workspace . '/output.zip';
+				$arguments = $this->cmd['name'] === 'zip'
+					? array($this->cmd['path'], '-q', '-r', $output, '--')
+					: array($this->cmd['path'], 'a', '-tzip', '-bso0', '-bsp0', $output, '--');
+				$batches = $this->cmd['name'] === 'zip' ? array_chunk($this->files, 100) : array(array('.'));
+				foreach ($batches as $batch) {
+					if ($this->runCommand(array_merge($arguments, $batch), $this->workspace . '/input') !== 0) $this->fail("External ZIP command failed");
+				}
+				if (!is_file($output) or !chmod($output, 0600) or !rename($output, $this->name)) $this->fail("Could not finalize command archive");
+				$this->abortWriter();
 			}
-		}
-
-		$cwd = getcwd();
-		if ($common_path_use) {
-			chdir($common_path);
-		}
-
-		$cmd = $this->cmd['cmd'] . ' ' . $this->cmd['argc'] . ' ' . escapeshellarg($this->name) . ' ' . $argc;
-
-		exec($cmd, $o, $c);
-
-		if ($common_path_use) {
-			chdir($cwd);
-		}
-
-		$this->opened = false;
-
-		if (file_exists($this->name)) {
-			return true;
-		} else {
-			// Unable to create archive
-			return false;
+			$this->finished = TRUE;
+			return TRUE;
+		} catch (ServiceException $exception) {
+			$this->cleanup();
+			throw $exception;
+		} catch (Exception $exception) {
+			$this->fail("External ZIP command failed");
 		}
 	}
 
-	public function stream() {
-		if (!file_exists($this->name)) {
-			return 0;
+	protected function abortWriter() {
+		if ($this->workspace === NULL or !is_dir($this->workspace)) return;
+		$entries = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($this->workspace, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+		foreach ($entries as $entry) {
+			if ($entry->isDir() and !$entry->isLink()) rmdir($entry->getPathname());
+			else unlink($entry->getPathname());
 		}
-
-		$handle = @fopen($this->name, "rb");
-		if (!$handle) {
-			throw new ServiceException("REQUEST_FAILED", "Could not open zip for reading: " . $this->name);
-		}
-
-		return $handle;
+		rmdir($this->workspace);
+		$this->workspace = NULL;
 	}
 
-	public function filename() {
-		return $this->name;
+	public function common_path($dirList) {
+		if (!is_array($dirList) or !$dirList) return NULL;
+		$dirList = array_values(array_unique($dirList));
+		while (count($dirList) !== 1) {
+			$parents = array_values(array_unique(array_map('dirname', $dirList)));
+			if ($parents === $dirList) return NULL;
+			$dirList = $parents;
+		}
+		return $dirList[0];
+	}
+
+	public function relative_path($from, $to) {
+		$from = explode(DIRECTORY_SEPARATOR, $from);
+		$to = explode(DIRECTORY_SEPARATOR, $to);
+		foreach ($from as $depth => $directory) {
+			if (!isset($to[$depth]) or $directory !== $to[$depth]) break;
+			unset($to[$depth], $from[$depth]);
+		}
+		for ($depth = 0; $depth < count($from) - 1; $depth++) array_unshift($to, '..');
+		return implode(DIRECTORY_SEPARATOR, $to);
 	}
 }
 ?>

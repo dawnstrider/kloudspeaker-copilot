@@ -1,49 +1,62 @@
 <?php
 
-require_once "PHPUnit/Extensions/Database/TestCase.php";
+use PHPUnit\Framework\TestCase;
 
-abstract class Kloudspeaker_TestCase extends PHPUnit_Extensions_Database_TestCase {
+abstract class Kloudspeaker_TestCase extends TestCase {
 	static private $CONFIGURATION = array(
-		"debug" => TRUE,
+		"debug" => FALSE,
 		"timezone" => "Europe/Helsinki"
 	);
 	
-    // only instantiate pdo once for test clean-up/fixture load
-    static private $pdo = null;
-
-    // only instantiate PHPUnit_Extensions_Database_DB_IDatabaseConnection once per test
-    private $conn = null;
-    
-    static private $init = FALSE;
+	private $pdo;
     protected $responseHandler = null;
 
-    final public function getConnection() {
-    	if (!self::$init) {
-		    set_include_path(dirname(__FILE__).'/..'.PATH_SEPARATOR.get_include_path());
-			require_once("include/KloudspeakerBackend.class.php");
-			require_once("include/Settings.class.php");
-			require_once("include/Logging.class.php");
-			require_once("include/Request.class.php");
-			require_once("db/pdo/PDODatabase.class.php");
-			self::$init = TRUE;
+	protected function setUp(): void {
+		parent::setUp();
+		$this->pdo = new PDO('sqlite::memory:');
+		$this->pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$this->pdo->exec(file_get_contents(__DIR__ . '/../db/sqlite/sql/install/create_tables.sql'));
+		$this->pdo->exec(file_get_contents(__DIR__ . '/../db/sqlite/sql/install/params.sql'));
+		$fixture = simplexml_load_file(__DIR__ . '/db.xml');
+		if ($fixture === false) {
+			throw new RuntimeException('Could not load database test fixture');
 		}
+		foreach ($fixture->table as $table) {
+			$name = (string) $table['name'];
+			if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $name)) {
+				throw new RuntimeException('Invalid fixture table name');
+			}
+			$this->pdo->exec('DELETE FROM "' . $name . '"');
+			$columns = array();
+			foreach ($table->column as $column) {
+				$columnName = (string) $column;
+				if (!preg_match('/^[a-z_][a-z0-9_]*$/i', $columnName)) {
+					throw new RuntimeException('Invalid fixture column name');
+				}
+				$columns[] = '"' . $columnName . '"';
+			}
+			foreach ($table->row as $row) {
+				$values = array();
+				foreach ($row->children() as $value) {
+					$values[] = $value->getName() === 'null' ? null : (string) $value;
+				}
+				if (!$columns || count($columns) !== count($values)) {
+					throw new RuntimeException('Invalid fixture row');
+				}
+				$statement = $this->pdo->prepare('INSERT INTO "' . $name . '" (' . implode(', ', $columns) . ') VALUES (' . implode(', ', array_fill(0, count($values), '?')) . ')');
+				$statement->execute($values);
+			}
+		}
+	}
 
-        if ($this->conn === null) {
-            if (self::$pdo == null) {
-                self::$pdo = new PDO('sqlite::memory:');
-                self::$pdo->exec(file_get_contents(dirname(__FILE__).'/../db/sqlite/sql/install/create_tables.sql'));
-                self::$pdo->exec(file_get_contents(dirname(__FILE__).'/../db/sqlite/sql/install/params.sql'));
-            }
-            $this->conn = $this->createDefaultDBConnection(self::$pdo, ':memory:');
-        }
-
-        return $this->conn;
+	final public function getConnection(): PDO {
+		return $this->pdo;
     }
     
     protected function getBackend() {
     	Logging::initialize(self::$CONFIGURATION, "Test");
 		$this->responseHandler = new TestResponseHandler();
-		$db = PDODatabase::createFromObj(self::$pdo, "sqlite");
+		$db = PDODatabase::createFromObj($this->pdo, "sqlite");
 		$settings = new Settings(self::$CONFIGURATION);
 		$backend = new KloudspeakerBackend($settings, $db, $this->responseHandler);
 		//$backend->processRequest(new Request());
@@ -59,10 +72,6 @@ abstract class Kloudspeaker_TestCase extends PHPUnit_Extensions_Database_TestCas
 	    return $this->responseHandler->lastSuccess;
     }
     
-	public function getDataSet() {
-		return $this->createXMLDataSet(dirname(__FILE__).'/db.xml');
-	}
-	
 	protected function assertEqualArrayValues($a1, $a2) {
 		foreach(array_keys($a1) as $k) {
 			$this->assertTrue(isset($a2[$k]));

@@ -74,7 +74,7 @@ class PDODatabase {
 	}
 
 	public function password() {
-		return $this->password;
+		return $this->pw;
 	}
 
 	public function tablePrefix() {
@@ -109,6 +109,7 @@ class PDODatabase {
 	}
 
 	public function init() {
+		$this->db->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 		if ($this->type == "sqlite") {
 			$this->db->sqliteCreateFunction('REGEX', 'sqlite_regex_match', 2);
 		}
@@ -139,7 +140,11 @@ class PDODatabase {
 			Logging::logDebug("DB: " . $query);
 		}
 
-		$result = $this->db->query($query);
+		try {
+			$result = $this->db->query($query);
+		} catch (PDOException $e) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (" . $query . "): " . Util::array2str($this->db->errorInfo()));
+		}
 		if (!$result) {
 			throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (" . $query . "): " . Util::array2str($this->db->errorInfo()));
 		}

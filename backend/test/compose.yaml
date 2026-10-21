@@ -1,0 +1,143 @@
+name: kloudspeaker-php82
+
+x-test-runner: &test-runner
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: kloudspeaker-php82-tests
+    read_only: true
+    user: "65534:65534"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
+    volumes:
+      - ../..:/workspace:ro
+
+services:
+  tests:
+    <<: *test-runner
+    network_mode: none
+    command:
+      - sh
+      - -c
+      - php /workspace/backend/test/CompatibilityTest.php && php /opt/test-tools/vendor/bin/phpunit --configuration /workspace/backend/test/phpunit.xml
+
+  mariadb:
+    image: mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
+    profiles: [database]
+    read_only: true
+    environment:
+      MARIADB_DATABASE: kloudspeaker_test
+      MARIADB_USER: migration_test
+      MARIADB_PASSWORD: fixture-password
+      MARIADB_ROOT_PASSWORD: fixture-root-password
+    tmpfs:
+      - /var/lib/mysql:rw,nosuid,nodev,size=512m
+      - /run/mysqld:rw,nosuid,nodev,mode=1777
+      - /tmp:rw,nosuid,nodev,size=64m
+    networks: [database-tests]
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  database-tests:
+    <<: *test-runner
+    profiles: [database]
+    environment:
+      KLOUDSPEAKER_DB_INTEGRATION: "1"
+    networks: [database-tests]
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    command:
+      - php
+      - /opt/test-tools/vendor/bin/phpunit
+      - --configuration
+      - /workspace/backend/test/phpunit.xml
+      - /workspace/backend/test/DatabaseIntegrationTest.php
+
+  postgres:
+    image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24
+    profiles: [postgres]
+    read_only: true
+    environment:
+      POSTGRES_DB: kloudspeaker_test
+      POSTGRES_USER: migration_test
+      POSTGRES_PASSWORD: "fixture'pg\\password"
+      PGDATA: /var/lib/postgresql/data/pgdata
+    tmpfs:
+      - /var/lib/postgresql/data:rw,nosuid,nodev,size=512m
+      - /var/run/postgresql:rw,nosuid,nodev,mode=1777
+      - /tmp:rw,nosuid,nodev,size=64m
+    networks: [database-tests]
+    healthcheck:
+      test: [CMD, pg_isready, -h, 127.0.0.1, -U, migration_test, -d, kloudspeaker_test]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  postgres-tests:
+    <<: *test-runner
+    profiles: [postgres]
+    environment:
+      KLOUDSPEAKER_POSTGRES_INTEGRATION: "1"
+    networks: [database-tests]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command:
+      - php
+      - /opt/test-tools/vendor/bin/phpunit
+      - --configuration
+      - /workspace/backend/test/phpunit.xml
+      - /workspace/backend/test/PostgresqlIntegrationTest.php
+
+  mailpit:
+    image: axllent/mailpit:v1.31.6@sha256:23fe39e81bde596a918000b3135c0f85dc8bb4c9ea6be274b051143f3e300387
+    profiles: [mail]
+    read_only: true
+    user: "65534:65534"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    environment:
+      MP_DATABASE: /tmp/mailpit.db
+      MP_SMTP_AUTH: fixture-user:fixture-password
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
+    networks: [mail-tests]
+    healthcheck:
+      test: [CMD, /mailpit, readyz]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  mail-tests:
+    <<: *test-runner
+    profiles: [mail]
+    environment:
+      KLOUDSPEAKER_MAIL_INTEGRATION: "1"
+    networks: [mail-tests]
+    depends_on:
+      mailpit:
+        condition: service_healthy
+    command:
+      - php
+      - /opt/test-tools/vendor/bin/phpunit
+      - --configuration
+      - /workspace/backend/test/phpunit.xml
+      - /workspace/backend/test/MailIntegrationTest.php
+
+networks:
+  database-tests:
+    internal: true
+  mail-tests:
+    internal: true

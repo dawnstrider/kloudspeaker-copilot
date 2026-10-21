@@ -3,7 +3,7 @@
 	/**
 	 * PostgresqlDatabase.class.php
 	 *
-	 * Copyright 2015- Samuli Järvelä
+	 * Copyright 2015- Samuli Jï¿½rvelï¿½
 	 * Released under GPL License.
 	 *
 	 * License: http://www.kloudspeaker.com/license.php
@@ -32,7 +32,7 @@
 			
 			$db = new PostgresqlDatabase($host, $conf["user"], $conf["password"], $database, $tablePrefix);
 			$db->connect();
-			//if (isset($conf["charset"])) $db->setCharset($conf["charset"]);
+			if (isset($conf["charset"])) $db->setCharset($conf["charset"]);
 			return $db;
 		}
 		
@@ -45,6 +45,10 @@
 			$this->tablePrefix = $tablePrefix;
 		}
 		
+		public function type() {
+			return "postgresql";
+		}
+
 		public function host() {
 			return $this->host;
 		}
@@ -54,7 +58,7 @@
 		}
 
 		public function password() {
-			return $this->password;
+			return $this->pw;
 		}
 
 		public function database() {
@@ -70,21 +74,35 @@
 		}
 		
 		public function connect($selectDb = TRUE) {
-			$db = pg_connect("host=".$this->host." dbname=".$this->database." user=".$this->user". password=".$this->pw);
-			if (!$db) throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=".$this->host.", user=".$this->user.", password=".$this->pw."), error: ".pg_last_error());
+			$parameters = array('host' => $this->host, 'dbname' => $this->database, 'user' => $this->user, 'password' => $this->pw, 'connect_timeout' => 5);
+			$parts = array();
+			foreach ($parameters as $name => $value) {
+				$parts[] = $name . "='" . addcslashes((string) $value, "\\'") . "'";
+			}
+			try {
+				$db = @pg_connect(implode(' ', $parts), PGSQL_CONNECT_FORCE_NEW);
+			} catch (Exception $e) {
+				throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=".$this->host.", user=".$this->user.")");
+			}
+			if (!$db) throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=".$this->host.", user=".$this->user.")");
 			$this->db = $db;
 		}
 		
 		public function setCharset($charset) {
-			// is this needed?
+			try {
+				$result = @pg_set_client_encoding($this->db, $charset);
+			} catch (Exception $e) {
+				throw new ServiceException("INVALID_CONFIGURATION", "Could not set PostgreSQL client encoding");
+			}
+			if ($result !== 0) throw new ServiceException("INVALID_CONFIGURATION", "Could not set PostgreSQL client encoding");
 		}
 		
 		public function databaseExists() {
-			return mysql_select_db($this->database, $this->db);
+			return $this->db !== NULL and pg_dbname($this->db) === $this->database;
 		}
 
 		public function selectDb() {
-			// is it possible in postgresql not to select db on connection?
+			if (!$this->databaseExists()) $this->connect();
 		}
 
 		public function table($name) {
@@ -101,49 +119,65 @@
 		public function query($query) {
 			if (Logging::isDebug()) Logging::logDebug("DB: ".$query);
 			
-			$result = @pg_query($this->db, $query);
+			try {
+				$result = @pg_query($this->db, $query);
+			} catch (Exception $e) {
+				throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (".$query."): ".pg_last_error($this->db));
+			}
 			if (!$result)
 				throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (".$query."): ".pg_last_error($this->db));
-			return new Result($this->db, $result);
+			return new PostgresqlResult($this->db, $result);
+		}
+
+		public function queries($sql) {
+			$result = $this->query($sql);
+			$result->free();
+			return TRUE;
 		}
 		
 		public function startTransaction() {
-			$result = @pg_query($this->db, "START TRANSACTION;");
-			if (!$result)
-				throw new ServiceException("INVALID_CONFIGURATION", "Error starting transaction: ".pg_last_error($this->db));
+			if ($this->isTransaction()) return;
+			$this->query("START TRANSACTION;")->free();
 		}
 
 		public function commit() {
-			$result = @pg_query($this->db, "COMMIT;");
-			if (!$result)
-				throw new ServiceException("INVALID_CONFIGURATION", "Error committing transaction: ".pg_last_error($this->db));
+			if (!$this->isTransaction()) return;
+			if (pg_transaction_status($this->db) === PGSQL_TRANSACTION_INERROR)
+				throw new ServiceException("INVALID_CONFIGURATION", "Cannot commit a failed PostgreSQL transaction; rollback is required");
+			$this->query("COMMIT;")->free();
+		}
+
+		public function rollback() {
+			if (!$this->isTransaction()) return;
+			$this->query("ROLLBACK;")->free();
+		}
+
+		public function isTransaction() {
+			if ($this->db === NULL) return FALSE;
+			$status = pg_transaction_status($this->db);
+			return $status === PGSQL_TRANSACTION_INTRANS or $status === PGSQL_TRANSACTION_INERROR or $status === PGSQL_TRANSACTION_ACTIVE;
 		}
 		
 		public function string($s, $quote = FALSE) {
-			if ($s == NULL) return 'NULL';
-			$r = pg_escape_string($this->db, $s);
-			if ($quote) return "'".$r."'";
-			return $r;
+			if ($s === NULL) return 'NULL';
+			if ($quote) return pg_escape_literal($this->db, $s);
+			return pg_escape_string($this->db, $s);
 		}
 		
 		public function arrayString($a, $quote = FALSE) {
-			$result = '';
-			$first = TRUE;
-			foreach($a as $s) {
-				if (!$first) $result .= ',';
-				if ($quote) $result .= "'".$s-"'";
-				else $result .= $s;
-				$first = FALSE;
+			$parts = array();
+			foreach ($a as $value) {
+				$parts[] = $this->string($value, $quote);
 			}
-			return $result;
+			return implode(',', $parts);
 		}
 		
 		public function lastId() {
-			return pg_last_oid($this->db);
+			return $this->query('SELECT lastval() AS id')->firstValue('id');
 		}
 	}
 	
-	class Result {
+	class PostgresqlResult {
 		private $db;
 		private $result;
 		
@@ -157,7 +191,7 @@
 		}
 
 		public function affected() {
-			return pg_affected_rows($this->db);
+			return pg_affected_rows($this->result);
 		}
 				
 		public function rows() {
@@ -165,25 +199,70 @@
 			while ($row = pg_fetch_assoc($this->result)) {
 				$list[] = $row;
 			}
-			pg_free_result($this->result);
+			$this->free();
+			return $list;
+		}
+
+		public function values($column) {
+			$list = array();
+			while ($row = pg_fetch_assoc($this->result)) {
+				$list[] = $row[$column];
+			}
+			$this->free();
+			return $list;
+		}
+
+		public function valueMap($keyCol, $valueCol = NULL, $valueCol2 = NULL) {
+			$list = array();
+			while ($row = pg_fetch_assoc($this->result)) {
+				if ($valueCol === NULL) {
+					$list[$row[$keyCol]] = $row;
+				} else if ($valueCol2 !== NULL) {
+					$list[$row[$keyCol]] = array($valueCol => $row[$valueCol], $valueCol2 => $row[$valueCol2]);
+				} else {
+					$list[$row[$keyCol]] = $row[$valueCol];
+				}
+			}
+			$this->free();
+			return $list;
+		}
+
+		public function listMap($keyCol) {
+			$list = array();
+			while ($row = pg_fetch_assoc($this->result)) {
+				$key = $row[$keyCol];
+				if (!isset($list[$key])) $list[$key] = array();
+				$list[$key][] = $row;
+			}
+			$this->free();
 			return $list;
 		}
 		
 		public function firstRow() {
 			$ret = pg_fetch_assoc($this->result);
-			pg_free_result($this->result);
-			return $ret;
+			$this->free();
+			return $ret === FALSE ? NULL : $ret;
 		}
-		
-		public function value($i) {
-			$ret = pg_result($this->result, $i);
-			pg_free_result($this->result);
+
+		public function firstValue($column) {
+			$row = $this->firstRow();
+			return $row === NULL ? NULL : $row[$column];
+		}
+
+		public function value($row = 0, $field = 0) {
+			if ($row < 0 or $row >= pg_num_rows($this->result)) {
+				$this->free();
+				return NULL;
+			}
+			$ret = pg_fetch_result($this->result, $row, $field);
+			$this->free();
 			return $ret;
 		}
 		
 		public function free() {
-			if ($this->result === TRUE or $this->result === FALSE) return;
+			if ($this->result === NULL or $this->result === TRUE or $this->result === FALSE) return;
 			pg_free_result($this->result);
+			$this->result = NULL;
 		}
 	}
 ?>

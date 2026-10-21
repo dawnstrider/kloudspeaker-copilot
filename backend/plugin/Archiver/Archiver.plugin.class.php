@@ -3,7 +3,7 @@
 /**
  * Archiver.plugin.class.php
  *
- * Copyright 2015- Samuli Järvelä
+ * Copyright 2015- Samuli Jï¿½rvelï¿½
  * Released under GPL License.
  *
  * License: http://www.kloudspeaker.com/license.php
@@ -12,6 +12,8 @@
 require_once "ArchiveManager.class.php";
 
 class Archiver extends PluginBase {
+	public $archiveManager;
+
 	public function setup() {
 		$this->addService("archiver", "ArchiverServices");
 		$this->env->filesystem()->registerItemContextPlugin("plugin-archiver", $this);

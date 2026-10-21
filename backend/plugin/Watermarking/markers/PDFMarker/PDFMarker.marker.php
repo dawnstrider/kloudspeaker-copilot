@@ -9,44 +9,69 @@
  * License: http://www.kloudspeaker.com/license.php
  */
 
-require_once 'fpdf/fpdf.php';
-require_once 'fpdi/fpdi.php';
+$pdfVendor = dirname(__DIR__, 4) . '/vendor/';
+require_once $pdfVendor . 'fpdf/fpdf.php';
+require_once $pdfVendor . 'fpdi/src/autoload.php';
 
 class PDFMarker extends MarkerBase {
 
 	public function mark($src, $dest, $watermarkText) {
-		$imgProp = NULL;
-
-		if ($this->getSetting("img_file", NULL) != NULL) {
-			$file = $this->getSetting("img_file");
-			$imgProp = $this->extend_props($watermarkText, array(
-				"size" => getimagesize($file),
-				"file" => $file,
-			));
-		} else if ($this->getSetting("rotation", NULL) != NULL) {
-			$font = $this->getSetting("img_font", dirname(__FILE__) . DIRECTORY_SEPARATOR . 'Arial.ttf');
-			if ($font == NULL) {
-				throw new ServiceException("INVALID_CONFIGURATION", "Image generation requires font file defined with 'img_font'");
-			}
-
-			$imgProp = $this->extend_props($watermarkText, array(
-				"size" => $this->getSetting("img_size", array(800, 200)),
-				"font" => $font,
-				"font_size" => $this->getSetting("img_font_size", 50),
-				"color" => $this->getSetting("color", array(0, 0, 0)),
-				"alpha" => $this->getSetting("alpha", 50),
-				"rotation" => $this->getSetting("rotation", 45),
-			));
-
-			$imageGenerator = $this->env->imageGenerator();
-			$imgFile = $imageGenerator->createText($watermarkText, $imgProp["size"], $imgProp["font"], $imgProp["font_size"], $imgProp["color"], $imgProp["alpha"], $imgProp["rotation"]);
-			$imgProp["file"] = $imgFile;
-			$imgProp["size"] = getimagesize($imgFile);
+		if (!is_string($src) or !is_string($dest) or !is_string($watermarkText) or $dest === '' or !is_file($src) or !is_readable($src)) {
+			throw new ServiceException("INVALID_REQUEST", "A readable PDF source and destination file are required");
 		}
-
-		$pdf = new WatermarkedPDF($this->getProperties($src, $watermarkText, $imgProp));
-		$pdf->mark($dest);
-		return TRUE;
+		if ($src === $dest or (file_exists($dest) and realpath($src) === realpath($dest)) or is_dir($dest)) {
+			throw new ServiceException("INVALID_REQUEST", "PDF destination must differ from its source");
+		}
+		if (!is_dir(dirname($dest)) or !is_writable(dirname($dest))) {
+			throw new ServiceException("REQUEST_FAILED", "PDF destination directory is not writable");
+		}
+		$temporaryImage = NULL;
+		$temporaryPdf = NULL;
+		try {
+			$imgProp = NULL;
+			if ($this->getSetting("img_file", NULL) != NULL) {
+				$file = $this->getSetting("img_file");
+				if (!is_string($file) or !is_file($file) or !is_readable($file)) {
+					throw new ServiceException("INVALID_CONFIGURATION", "Configured watermark image is not readable");
+				}
+				try {
+					$size = @getimagesize($file);
+				} catch (Exception $exception) {
+					throw new ServiceException("INVALID_CONFIGURATION", "Configured watermark image is invalid");
+				}
+				if ($size === FALSE) throw new ServiceException("INVALID_CONFIGURATION", "Configured watermark image is invalid");
+				$imgProp = $this->extend_props($watermarkText, array("size" => $size, "file" => $file));
+			} else if ($this->getSetting("rotation", NULL) != NULL) {
+				$font = $this->getSetting("img_font", __DIR__ . '/Arial.ttf');
+				if (!is_string($font) or !is_file($font) or !is_readable($font)) {
+					throw new ServiceException("INVALID_CONFIGURATION", "Image generation requires a readable 'img_font'");
+				}
+				$imgProp = $this->extend_props($watermarkText, array(
+					"size" => $this->getSetting("img_size", array(800, 200)),
+					"font" => $font,
+					"font_size" => $this->getSetting("img_font_size", 50),
+					"color" => $this->getSetting("color", array(0, 0, 0)),
+					"alpha" => $this->getSetting("alpha", 50),
+					"rotation" => $this->getSetting("rotation", 45),
+				));
+				$temporaryImage = $this->env->imageGenerator()->createText($watermarkText, $imgProp["size"], $imgProp["font"], $imgProp["font_size"], $imgProp["color"], $imgProp["alpha"], $imgProp["rotation"]);
+				$imgProp["file"] = $temporaryImage;
+				$imgProp["size"] = getimagesize($temporaryImage);
+			}
+			$pdf = new WatermarkedPDF($this->getProperties($src, $watermarkText, $imgProp));
+			$temporaryPdf = tempnam(dirname($dest), 'kloudspeaker-pdf-');
+			if ($temporaryPdf === FALSE) throw new ServiceException("REQUEST_FAILED", "Could not create temporary PDF");
+			$pdf->mark($temporaryPdf);
+			if (!rename($temporaryPdf, $dest)) throw new ServiceException("REQUEST_FAILED", "Could not finalize watermarked PDF");
+			return TRUE;
+		} catch (ServiceException $exception) {
+			throw $exception;
+		} catch (Exception $exception) {
+			throw new ServiceException("REQUEST_FAILED", "Could not watermark PDF");
+		} finally {
+			if ($temporaryPdf !== NULL and is_file($temporaryPdf)) unlink($temporaryPdf);
+			if ($temporaryImage !== NULL and is_file($temporaryImage)) unlink($temporaryImage);
+		}
 	}
 
 	private function extend_props($watermarkText, $props) {
@@ -76,7 +101,7 @@ class PDFMarker extends MarkerBase {
 	}
 }
 
-class WatermarkedPDF extends FPDI {
+class WatermarkedPDF extends \setasign\Fpdi\Fpdi {
 	private $opt;
 	private $xd = 0;
 	private $yd = 0;
@@ -86,6 +111,7 @@ class WatermarkedPDF extends FPDI {
 
 	function __construct($opt) {
 		parent::__construct();
+		$this->SetAutoPageBreak(FALSE, 0);
 		$this->opt = $opt;
 	}
 
@@ -96,8 +122,8 @@ class WatermarkedPDF extends FPDI {
 			$template = $this->importPage($i);
 			$size = $this->getTemplateSize($template);
 
-			$this->preparePage(array($size['w'], $size['h']));
-			$this->addPage("P", array($size['w'], $size['h']));
+			$this->addPage($size['orientation'], array($size['width'], $size['height']));
+			$this->preparePage(array($size['width'], $size['height']));
 			$this->useTemplate($template);
 
 			if (is_array($this->opt["margins"])) {
@@ -109,7 +135,7 @@ class WatermarkedPDF extends FPDI {
 			}
 		}
 
-		$this->Output($dest);
+		$this->Output('F', $dest);
 	}
 
 	private function preparePage($size) {

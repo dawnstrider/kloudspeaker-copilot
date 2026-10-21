@@ -9,17 +9,25 @@
  * License: http://www.kloudspeaker.com/license.php
  */
 
-@include_once 'zip.lib.php';
+spl_autoload_register(function ($class) {
+	$prefix = 'ZipStream\\';
+	if (strncmp($class, $prefix, strlen($prefix)) !== 0) return;
+	$file = dirname(__DIR__, 3) . '/vendor/zipstream/src/' . str_replace('\\', '/', substr($class, strlen($prefix))) . '.php';
+	if (is_file($file)) require_once $file;
+});
 
-class KloudspeakerZipRaw implements KloudspeakerCompressor {
-	private $env;
-	private $name;
-	private $zip;
+class KloudspeakerZipRaw extends KloudspeakerZipCompressor {
+	private $zip = NULL;
+	private $output = NULL;
 
 	function __construct($env) {
-		$this->env = $env;
-		$this->name = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . uniqid('Kloudspeaker', true) . 'zip';
-		$this->zip = new zipfile();
+		if (PHP_INT_SIZE !== 8 or !extension_loaded('mbstring') or !extension_loaded('zlib')) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Raw ZIP creation requires 64-bit PHP, mbstring and zlib");
+		}
+		parent::__construct($env);
+		$this->output = fopen($this->name, 'w+b');
+		if ($this->output === FALSE) $this->fail("Could not open archive output");
+		$this->zip = new \ZipStream\ZipStream(outputStream: $this->output, sendHttpHeaders: FALSE, defaultEnableZeroHeader: FALSE);
 	}
 
 	public function acceptFolders() {
@@ -27,42 +35,57 @@ class KloudspeakerZipRaw implements KloudspeakerCompressor {
 	}
 
 	public function add($name, $path, $size = 0) {
-		if (is_file($path)) {
-			$this->zip->addFile(file_get_contents($path), $name);
-		} else if (is_dir($path)) {
-			$contents = scandir($path);
-			$bad = array(".", "..", ".DS_Store", "_notes", "Thumbs.db");
-			$files = array_values(array_diff($contents, $bad));
-
-			for ($i = 0; $i < count($files); $i++) {
-				$this->add($name . DIRECTORY_SEPARATOR . $files[$i], $size, $path . DIRECTORY_SEPARATOR . $files[$i]);
+		$this->ensureWritable();
+		if (!is_string($path) or (!is_file($path) and !is_dir($path)) or !is_readable($path)) {
+			$this->fail("Archive source is not readable");
+		}
+		if (is_link($path)) $this->fail("Archive source must not be a symbolic link");
+		$name = $this->entryName($name);
+		try {
+			if (is_file($path)) {
+				$this->zip->addFileFromPath($this->reserveName($name), $path);
+			} else {
+				$this->addEmptyDir($name);
+				foreach (scandir($path) as $entry) {
+					if (in_array($entry, array('.', '..', '.DS_Store', '_notes', 'Thumbs.db'), TRUE)) continue;
+					$this->add($name . '/' . $entry, $path . DIRECTORY_SEPARATOR . $entry);
+				}
 			}
+		} catch (ServiceException $exception) {
+			throw $exception;
+		} catch (Exception $exception) {
+			$this->fail("Could not add file to archive");
 		}
 	}
 
 	public function addEmptyDir($name) {
-		//TODO
+		$name = $this->reserveName($name);
+		try {
+			$this->zip->addDirectory($name);
+		} catch (Exception $exception) {
+			$this->fail("Could not add directory to archive");
+		}
 	}
 
 	public function finish() {
-		file_put_contents($this->name, $this->zip->file());
+		if ($this->finished) return;
+		$this->ensureWritable();
+		try {
+			$size = $this->zip->finish();
+			if (!fflush($this->output) or ftell($this->output) !== $size) $this->fail("Archive output is incomplete");
+			fclose($this->output);
+			$this->output = NULL;
+			$this->zip = NULL;
+			$this->finished = TRUE;
+		} catch (Exception $exception) {
+			$this->fail("Could not finalize archive");
+		}
 	}
 
-	public function stream() {
-		if (!file_exists($this->name)) {
-			return 0;
-		}
-
-		$handle = @fopen($this->name, "rb");
-		if (!$handle) {
-			throw new ServiceException("REQUEST_FAILED", "Could not open zip for reading: " . $this->name);
-		}
-
-		return $handle;
-	}
-
-	public function filename() {
-		return $this->name;
+	protected function abortWriter() {
+		$this->zip = NULL;
+		if (is_resource($this->output)) fclose($this->output);
+		$this->output = NULL;
 	}
 }
 ?>

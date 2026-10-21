@@ -3,7 +3,7 @@
 	/**
 	 * KloudspeakerBackend.class.php
 	 *
-	 * Copyright 2015- Samuli Järvelä
+	 * Copyright 2015- Samuli Jï¿½rvelï¿½
 	 * Released under GPL License.
 	 *
 	 * License: http://www.kloudspeaker.com/license.php
@@ -19,6 +19,9 @@
 
 	class KloudspeakerBackend {
 		private $environment;
+		public $settings;
+		public $session;
+		public $configuration;
 		
 		function __construct($settings, $db, $responseHandler) {
 			$this->settings = $settings;

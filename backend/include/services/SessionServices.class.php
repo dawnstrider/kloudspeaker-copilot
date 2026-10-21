@@ -64,6 +64,9 @@ class SessionServices extends ServicesBase {
 		if (!$this->request->hasData("username") or !$this->request->hasData("password")) {
 			throw new ServiceException("INVALID_REQUEST", "Missing parameters");
 		}
+		if (!is_string($this->request->data("username")) or !is_string($this->request->data("password"))) {
+			throw new ServiceException("INVALID_REQUEST", "Invalid credentials");
+		}
 
 		$pw = base64_decode($this->request->data("password"));
 		$this->env->authentication()->login($this->request->data("username"), $pw);

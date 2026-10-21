@@ -23,6 +23,7 @@ class Request {
 	private $params = array();
 	private $ip;
 	private $raw;
+	public $data;
 
 	public static function get($raw = FALSE) {
 		$method = isset($_SERVER['REQUEST_METHOD']) ? strtolower($_SERVER['REQUEST_METHOD']) : NULL;

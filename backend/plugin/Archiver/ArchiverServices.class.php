@@ -3,7 +3,7 @@
 /**
  * ArchiverServices.class.php
  *
- * Copyright 2015- Samuli Järvelä
+ * Copyright 2015- Samuli Jï¿½rvelï¿½
  * Released under GPL License.
  *
  * License: http://www.kloudspeaker.com/license.php
@@ -64,8 +64,12 @@ class ArchiverServices extends ServicesBase {
 			throw new ServiceException("REQUEST_FAILED", "Could not open zip for reading: " . $a);
 		}
 
-		$this->env->response()->download($name, 'zip', FALSE, $handle);
-		unlink($a);
+		try {
+			$this->env->response()->download($name, 'zip', FALSE, $handle);
+		} finally {
+			if (is_resource($handle)) fclose($handle);
+			if (is_file($a)) unlink($a);
+		}
 	}
 
 	public function processPost() {
@@ -185,7 +189,10 @@ class ArchiverServices extends ServicesBase {
 
 	private function onExtract() {
 		$data = $this->request->data;
-		if (!array_key_exists("item", $data)) {
+		if (!is_array($data) or !isset($data['item'])) {
+			throw $this->invalidRequestException();
+		}
+		if (isset($data['overwrite']) and !is_bool($data['overwrite']) and !in_array($data['overwrite'], array(0, 1, '0', '1'), TRUE)) {
 			throw $this->invalidRequestException();
 		}
 
@@ -195,7 +202,7 @@ class ArchiverServices extends ServicesBase {
 
 		$parent = NULL;
 		if (isset($data["folder"])) {
-			$this->item($data["folder"]);
+			$parent = $this->item($data["folder"]);
 		} else {
 			$parent = $archive->parent();
 		}
@@ -211,15 +218,19 @@ class ArchiverServices extends ServicesBase {
 		//$target = $parent->internalPath() . DIRECTORY_SEPARATOR . $name . DIRECTORY_SEPARATOR;
 
 		$this->env->filesystem()->validateAction(FileEvent::CREATE_ITEM, $target);
-		$this->env->filesystem()->triggerActionInterceptor(FileEvent::CREATE_ITEM, $target);
-
-		if ($target->exists() and $overwrite) {
-			$target->delete();
+		if ($this->env->filesystem()->triggerActionInterceptor(FileEvent::CREATE_ITEM, $target)) return;
+		if ($target->exists()) $this->env->filesystem()->assertRights($target, FilesystemController::PERMISSION_LEVEL_READWRITEDELETE, 'replace extracted folder');
+		$created = FALSE;
+		try {
+			if (!$target->exists()) {
+				$this->env->filesystem()->createItem($target);
+				$created = TRUE;
+			}
+			$this->archiveManager()->extract($archive->internalPath(), $target->internalPath(), (bool) $overwrite);
+		} catch (Throwable $exception) {
+			if ($created and $target->exists()) $target->delete();
+			throw $exception;
 		}
-
-		$this->env->filesystem()->createItem($target);
-
-		$this->archiveManager()->extract($archive->internalPath(), $target->internalPath());
 		$this->env->events()->onEvent(FileEvent::createItem($target));
 
 		$this->response()->success(array());

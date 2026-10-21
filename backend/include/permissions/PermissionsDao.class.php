@@ -161,14 +161,14 @@ class Kloudspeaker_PermissionsDao {
 		return $k;
 	}
 
-	public function getGenericPermissions($name = NULL, $userId) {
+	public function getGenericPermissions($name, $userId) {
 		$criteria = ($name != NULL ? "permission.name=" . $this->db->string($name, TRUE) : "1=1");
 		$criteria .= " AND subject = ''";
 		$criteria .= ($userId != NULL ? " AND user_id=" . $this->db->string($userId) : "");
 		return $this->doGetPermissions($criteria);
 	}
 
-	public function getPermissions($name = NULL, $subject = NULL, $userId) {
+	public function getPermissions($name, $subject, $userId) {
 		$criteria = ($name != NULL ? "permission.name=" . $this->db->string($name, TRUE) : "1=1");
 		$criteria .= ($subject != NULL ? " AND subject=" . $this->db->string($subject, TRUE) : "");
 		$criteria .= ($userId != NULL ? " AND user_id=" . $this->db->string($userId) : "");

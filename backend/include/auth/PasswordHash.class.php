@@ -1,5 +1,5 @@
 <?php
-require_once "vendor/phpass/PasswordHash.php";
+require_once "vendor/phpass/src/PasswordHash.php";
 /**
  * PasswordHash.class.php
  *
@@ -14,16 +14,20 @@ class Kloudspeaker_PasswordHash {
 	private static $hash_portable = FALSE;
 
 	private $serverSalt;
+	public $hasher;
 
 	public function __construct($settings) {
 		$this->serverSalt = $settings->setting("server_hash_salt");
-		$devurandom = ($settings->setting("no_dev_urandom") or $settings->setting("no_udev_random"));
-		$this->hasher = new PasswordHash(self::$hash_cost_log2, self::$hash_portable, $devurandom);
+		$this->hasher = new Kloudspeaker_PasswordHashGenerator(self::$hash_cost_log2, self::$hash_portable);
 	}
 
 	public function createHash($pw, $saltPrefix = '') {
 		$salt = uniqid($saltPrefix, TRUE);
-		$hash = $this->hasher->HashPassword($this->serverSalt . $pw . $salt);
+		try {
+			$hash = $this->hasher->HashPassword($this->serverSalt . $pw . $salt);
+		} catch (Exception $e) {
+			throw new ServiceException("REQUEST_FAILED");
+		}
 		if (strlen($hash) < 20) {
 			throw new ServiceException("REQUEST_FAILED");
 		}
@@ -32,8 +36,17 @@ class Kloudspeaker_PasswordHash {
 	}
 
 	public function isEqual($pw, $hash, $salt) {
+		if (!is_string($hash) or strlen($hash) < 13) {
+			return FALSE;
+		}
 		$ret = $this->hasher->CheckPassword($this->serverSalt . $pw . $salt, $hash);
 		return ($ret === TRUE or $ret == 1);
+	}
+}
+
+class Kloudspeaker_PasswordHashGenerator extends PasswordHash {
+	public function get_random_bytes($count) {
+		return random_bytes($count);
 	}
 }
 ?>

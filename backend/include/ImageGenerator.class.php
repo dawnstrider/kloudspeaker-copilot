@@ -71,9 +71,9 @@ class ImageGenerator {
 			$color[0],
 			$color[1],
 			$color[2],
-			127 * (100 - $opacity) / 100
+			(int) (127 * (100 - $opacity) / 100)
 		);
-		imagettftext($im, $size, 0, $x, $y, $alpha_color, $font, $text);
+		imagettftext($im, $size, 0, (int) $x, (int) $y, $alpha_color, $font, $text);
 
 		if ($rotation != 0) {
 			$new = imagerotate($im, $rotation, $transparent);

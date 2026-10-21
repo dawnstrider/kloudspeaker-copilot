@@ -43,6 +43,12 @@ class ServiceEnvironment {
 	private $mailer = NULL;
 	private $urlRetriever = NULL;
 	private $imageGenerator = NULL;
+	public $cookies;
+	public $features;
+	public $plugins;
+	public $resources;
+	public $passwordHash;
+	public $commands;
 
 	public function __construct($db, $session, $responseHandler, $configuration, $settings) {
 		$this->db = $db;

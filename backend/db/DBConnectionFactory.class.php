@@ -30,8 +30,7 @@
 				require_once("db/sqlite/SQLite3Database.class.php");
 				return KloudspeakerSQLite3Database::createFromConf($db);
 			} else if (strcasecmp($type, 'sqlite') == 0) {
-				require_once("db/sqlite/SQLiteDatabase.class.php");
-				return KloudspeakerSQLiteDatabase::createFromConf($db);
+				throw new ServiceException("INVALID_CONFIGURATION", "SQLite2 databases are not supported by PHP 8.2. Export the database and import it into SQLite3 or PDO SQLite before changing the configuration; changing the type alone does not convert the database file.");
 			} else {
 				throw new ServiceException("INVALID_CONFIGURATION", "Unsupported database type: [".$type."]");
 			}

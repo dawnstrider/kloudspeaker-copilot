@@ -100,7 +100,7 @@ class ResourceLoader {
 
 	private function truepath($path) {
 		// whether $path is unix or not
-		$unipath = strlen($path) == 0 || $path{0} != '/';
+		$unipath = strlen($path) == 0 || $path[0] != '/';
 		// attempts to detect if path is relative in which case, add cwd
 		if (strpos($path, ':') === false && $unipath) {
 			$path = getcwd() . DIRECTORY_SEPARATOR . $path;

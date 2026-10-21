@@ -3,7 +3,7 @@
 /**
  * MySQLIDatabase.class.php
  *
- * Copyright 2015- Samuli Järvelä
+ * Copyright 2015- Samuli Jï¿½rvelï¿½
  * Released under GPL License.
  *
  * License: http://www.kloudspeaker.com/license.php
@@ -123,6 +123,7 @@ class MySQLIDatabase {
 	}
 
 	public function connect($selectDb = TRUE) {
+		mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 		try {
 			if ($selectDb) {
 				$db = @mysqli_connect($this->host, $this->user, $this->pw, $this->database, $this->port, $this->socket);
@@ -130,10 +131,10 @@ class MySQLIDatabase {
 				$db = @mysqli_connect($this->host, $this->user, $this->pw, "", $this->port, $this->socket);
 			}
 		} catch (mysqli_sql_exception $e) {
-			throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=" . $this->host . ", user=" . $this->user . ", password=" . $this->pw . "), error: " . mysqli_connect_errno() . "/" . mysqli_connect_error());
+			throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=" . $this->host . ", user=" . $this->user . "), error: " . mysqli_connect_errno() . "/" . mysqli_connect_error());
 		}
 		if (!$db) {
-			throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=" . $this->host . ", user=" . $this->user . ", password=" . $this->pw . "), error: " . mysqli_connect_errno() . "/" . mysqli_connect_error());
+			throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (host=" . $this->host . ", user=" . $this->user . "), error: " . mysqli_connect_errno() . "/" . mysqli_connect_error());
 		}
 
 		$this->db = $db;
@@ -152,8 +153,13 @@ class MySQLIDatabase {
 	}
 
 	public function selectDb() {
-		if (!mysqli_select_db($this->db, $this->database)) {
-			throw new ServiceException("INVALID_CONFIGURATION", "Could not select database (" . $this->database . ") error: " . mysql_error($this->db));
+		try {
+			$selected = mysqli_select_db($this->db, $this->database);
+		} catch (mysqli_sql_exception $e) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Could not select database (" . $this->database . ") error: " . mysqli_error($this->db));
+		}
+		if (!$selected) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Could not select database (" . $this->database . ") error: " . mysqli_error($this->db));
 		}
 	}
 
@@ -379,11 +385,17 @@ class MySQLIResult {
 
 	public function firstValue($val) {
 		$ret = $this->firstRow();
+		if (!$ret) {
+			return NULL;
+		}
 		return $ret[$val];
 	}
 
 	public function value($r = 0, $f = 0) {
 		$rows = $this->rows();
+		if (!isset($rows[$r])) {
+			return NULL;
+		}
 		$row = $rows[$r];
 		return $row[$f];
 	}

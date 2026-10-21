@@ -47,12 +47,17 @@ class KloudspeakerSQLite3Database {
 	}
 
 	public function connect() {
-		$db = new SQLite3($this->file);
+		try {
+			$db = new SQLite3($this->file);
+		} catch (Exception $e) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (file=" . $this->file . "): " . $e->getMessage());
+		}
 		if (!$db) {
 			throw new ServiceException("INVALID_CONFIGURATION", "Could not connect to database (file=" . $this->file . ")");
 		}
 
 		$this->db = $db;
+		$this->db->enableExceptions(TRUE);
 		$this->registerRegex();
 		$this->db->busyTimeout(5000);
 	}
@@ -77,7 +82,11 @@ class KloudspeakerSQLite3Database {
 			Logging::logDebug("DB: " . $query);
 		}
 
-		$result = $this->db->query(str_replace("`", "", $query));
+		try {
+			$result = $this->db->query(str_replace("`", "", $query));
+		} catch (Exception $e) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (" . $query . "): " . $this->db->lastErrorMsg());
+		}
 		if (!$result) {
 			throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (" . $query . "): " . $this->db->lastErrorMsg());
 		}
@@ -100,7 +109,11 @@ class KloudspeakerSQLite3Database {
 			Logging::logDebug("DB: " . $query);
 		}
 
-		$result = $this->db->exec($query);
+		try {
+			$result = $this->db->exec($query);
+		} catch (Exception $e) {
+			throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (" . $query . "): " . $this->db->lastErrorMsg());
+		}
 		if (!$result) {
 			throw new ServiceException("INVALID_CONFIGURATION", "Error executing query (" . $query . "): " . $this->db->lastErrorMsg());
 		}
@@ -113,10 +126,7 @@ class KloudspeakerSQLite3Database {
 			return;
 		}
 
-		$result = $this->db->exec("BEGIN;");
-		if (!$result) {
-			throw new ServiceException("INVALID_CONFIGURATION", "Error starting transaction: " . $this->db->lastErrorMsg());
-		}
+		$this->queries("BEGIN;");
 
 		$this->transaction = TRUE;
 	}
@@ -126,10 +136,7 @@ class KloudspeakerSQLite3Database {
 			return;
 		}
 
-		$result = $this->db->exec("COMMIT;");
-		if (!$result) {
-			throw new ServiceException("INVALID_CONFIGURATION", "Error committing transaction: " . $this->db->lastErrorMsg());
-		}
+		$this->queries("COMMIT;");
 
 		$this->transaction = FALSE;
 	}
@@ -139,10 +146,7 @@ class KloudspeakerSQLite3Database {
 			return;
 		}
 
-		$result = $this->db->exec("ROLLBACK;");
-		if (!$result) {
-			throw new ServiceException("INVALID_CONFIGURATION", "Error rollbacking transaction: " . $this->db->lastErrorMsg());
-		}
+		$this->queries("ROLLBACK;");
 
 		$this->transaction = FALSE;
 	}
@@ -198,7 +202,9 @@ class Result {
 	}
 
 	public function count() {
-		return count($this->rows(FALSE));
+		$count = count($this->rows(FALSE));
+		$this->result->reset();
+		return $count;
 	}
 
 	public function affected() {
@@ -228,6 +234,9 @@ class Result {
 
 	public function firstValue($val) {
 		$ret = $this->firstRow();
+		if (!$ret) {
+			return NULL;
+		}
 		return $ret[$val];
 	}
 
@@ -270,12 +279,15 @@ class Result {
 
 	public function value($r = 0, $f = 0) {
 		$rows = $this->rows();
+		if (!isset($rows[$r])) {
+			return NULL;
+		}
 		$row = $rows[$r];
 		return $row[$f];
 	}
 
 	public function free() {
-		if ($this->result === TRUE or $this->result === FALSE) {
+		if ($this->result === NULL or $this->result === TRUE or $this->result === FALSE) {
 			return;
 		}
 

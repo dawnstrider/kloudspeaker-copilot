@@ -1,0 +1,15 @@
+{
+    "name": "kloudspeaker/migration-tests",
+    "description": "Isolated PHP 8.2 migration test tools, not application dependencies",
+    "type": "project",
+    "require-dev": {
+        "phpunit/phpunit": "^11.5"
+    },
+    "config": {
+        "platform": {
+            "php": "8.2.35"
+        },
+        "allow-plugins": false,
+        "sort-packages": true
+    }
+}
