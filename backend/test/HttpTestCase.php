@@ -3,18 +3,32 @@
 require_once "TestCase.php";
 
 /**
- * Runs the real r.php entry point under the PHP built-in server on loopback, with an isolated SQLite file
- * database and the global error handler that production uses (every diagnostic becomes an exception).
+ * Runs the real r.php entry point with an isolated SQLite file database and the global error handler that
+ * production uses (every diagnostic becomes an exception). By default it starts the PHP built-in server on
+ * loopback. With KLOUDSPEAKER_HTTP_BASE_URL and KLOUDSPEAKER_HTTP_SHARED_DIR set (the Compose "web" profile) it
+ * instead talks to an external Apache that shares that directory and reads its settings from current/settings.json.
  */
 abstract class Kloudspeaker_HttpTestCase extends \PHPUnit\Framework\TestCase {
 	protected $baseDir;
+	protected $host = '127.0.0.1';
 	protected $port;
+	protected $baseUrl;
 	private $server;
 	private $pipes = array();
 
 	protected function startServer(array $settings): PDO {
-		$this->baseDir = sys_get_temp_dir() . '/kloudspeaker-http-' . bin2hex(random_bytes(4));
-		mkdir($this->baseDir);
+		$external = getenv('KLOUDSPEAKER_HTTP_BASE_URL');
+		if ($external) {
+			// the web server runs as another user: everything created here and by it must stay accessible to both
+			umask(0);
+			$this->baseDir = rtrim(getenv('KLOUDSPEAKER_HTTP_SHARED_DIR'), '/') . '/current';
+			if (is_dir($this->baseDir)) {
+				$this->removeTree($this->baseDir);
+			}
+		} else {
+			$this->baseDir = sys_get_temp_dir() . '/kloudspeaker-http-' . bin2hex(random_bytes(4));
+		}
+		mkdir($this->baseDir, 0777);
 		$dbFile = $this->baseDir . '/db.sqlite';
 		$pdo = new PDO('sqlite:' . $dbFile);
 		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -31,11 +45,21 @@ abstract class Kloudspeaker_HttpTestCase extends \PHPUnit\Framework\TestCase {
 		$settings += array('debug' => FALSE, 'timezone' => 'Europe/Helsinki', 'host_public_address' => 'http://127.0.0.1');
 		file_put_contents($this->baseDir . '/settings.json', json_encode($settings));
 
+		if ($external) {
+			chmod($dbFile, 0666);	// SQLite creates it 0644; the web server user must be able to write
+			$parts = parse_url($external);
+			$this->host = $parts['host'];
+			$this->port = $parts['port'] ?? 80;
+			$this->baseUrl = rtrim($external, '/');
+			return $pdo;
+		}
+
 		$probe = stream_socket_server('tcp://127.0.0.1:0');
 		$this->port = (int) substr(strrchr(stream_socket_get_name($probe, FALSE), ':'), 1);
 		fclose($probe);
 
 		$command = array(PHP_BINARY, '-d', 'display_errors=0', '-S', '127.0.0.1:' . $this->port, __DIR__ . '/http/router.php');
+		$this->baseUrl = 'http://127.0.0.1:' . $this->port;
 		$descriptors = array(array('pipe', 'r'), array('file', $this->baseDir . '/server.log', 'a'), array('file', $this->baseDir . '/server.log', 'a'));
 		$environment = array('KLOUDSPEAKER_HTTP_TEST_CONFIG' => $this->baseDir . '/settings.json', 'PATH' => getenv('PATH'));
 		$this->server = proc_open($command, $descriptors, $this->pipes, dirname(__DIR__), $environment);
@@ -74,7 +98,7 @@ abstract class Kloudspeaker_HttpTestCase extends \PHPUnit\Framework\TestCase {
 			$headers[] = 'Content-Type: application/octet-stream';
 		}
 		$context = stream_context_create(array('http' => array('method' => $method, 'header' => implode("\r\n", $headers), 'content' => $body ?? '', 'ignore_errors' => TRUE, 'timeout' => 20)));
-		$responseBody = file_get_contents('http://127.0.0.1:' . $this->port . '/r.php/' . $path, FALSE, $context);
+		$responseBody = file_get_contents($this->baseUrl . '/r.php/' . $path, FALSE, $context);
 		$responseHeaders = $http_response_header ?? array();
 		$status = isset($responseHeaders[0]) && preg_match('#\s(\d{3})\s#', $responseHeaders[0], $m) ? (int) $m[1] : 0;
 		return array('status' => $status, 'headers' => $responseHeaders, 'body' => $responseBody === FALSE ? '' : $responseBody);

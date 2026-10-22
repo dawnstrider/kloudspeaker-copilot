@@ -1460,6 +1460,16 @@ class FilesystemController {
 			unlink($origin);
 		}
 
+		// a streamed body shorter than announced means the client disconnected: never publish a truncated file
+		if (!$fromFile and !$append and $range == NULL and isset($_SERVER['CONTENT_LENGTH']) and ctype_digit((string) $_SERVER['CONTENT_LENGTH'])) {
+			clearstatcache();
+			$received = $target->size();
+			if ($received != (int) $_SERVER['CONTENT_LENGTH']) {
+				$target->delete();
+				throw new ServiceException("UPLOAD_FAILED", "Incomplete upload, received " . $received . " of " . $_SERVER['CONTENT_LENGTH'] . " bytes");
+			}
+		}
+
 		if ($range == NULL or ($range[2] >= $range[3] - 1)) {
 			$this->env->events()->onEvent(FileEvent::upload($target));
 		}

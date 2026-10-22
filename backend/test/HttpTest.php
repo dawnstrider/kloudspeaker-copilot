@@ -236,11 +236,13 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$payload = $this->binaryPayload(3 * 1024 * 1024);
 
 		// upload: promise 3 MiB, send 1000 bytes, then drop the connection
-		$socket = fsockopen('127.0.0.1', $this->port, $errno, $errstr, 5);
+		$socket = fsockopen($this->host, $this->port, $errno, $errstr, 5);
 		$this->assertNotFalse($socket);
-		fwrite($socket, "POST /r.php/filesystem/$folderId/files?format=binary&session=$session HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Disposition: attachment; filename=\"partial.bin\"\r\nContent-Type: application/octet-stream\r\nContent-Length: " . strlen($payload) . "\r\nConnection: close\r\n\r\n" . substr($payload, 0, 1000));
+		fwrite($socket, "POST /r.php/filesystem/$folderId/files?format=binary&session=$session HTTP/1.1\r\nHost: {$this->host}\r\nContent-Disposition: attachment; filename=\"partial.bin\"\r\nContent-Type: application/octet-stream\r\nContent-Length: " . strlen($payload) . "\r\nConnection: close\r\n\r\n" . substr($payload, 0, 1000));
 		fclose($socket);
-		usleep(300000);
+		for ($i = 0; $i < 60 && array_diff(scandir($root), array('.', '..')); $i++) {
+			usleep(50000);	// a web server may still be finishing the request
+		}
 		$this->assertSame(array(), array_values(array_diff(scandir($root), array('.', '..'))), 'an aborted upload must not leave a file behind');
 
 		// the server still serves a complete upload and download afterwards
@@ -249,8 +251,8 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$fileId = $this->listFiles($folderId, $session)[0]['id'];
 
 		// download: read the headers and 1000 body bytes, then drop the connection
-		$socket = fsockopen('127.0.0.1', $this->port, $errno, $errstr, 5);
-		fwrite($socket, "GET /r.php/filesystem/$fileId?session=$session HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+		$socket = fsockopen($this->host, $this->port, $errno, $errstr, 5);
+		fwrite($socket, "GET /r.php/filesystem/$fileId?session=$session HTTP/1.1\r\nHost: {$this->host}\r\nConnection: close\r\n\r\n");
 		$received = '';
 		while (strlen($received) < 3000 && !feof($socket)) {
 			$received .= fread($socket, 4096);
@@ -262,6 +264,21 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$this->assertSame(md5($payload), md5($again['body']));
 		$this->assertSame(md5($payload), md5_file($root . '/whole.bin'));
 		$this->assertSame(array('whole.bin'), array_values(array_diff(scandir($root), array('.', '..'))));
+	}
+
+	/** Reads a file the application manages through HTTP (the web server may own it with private permissions). */
+	private function managedFile(string $session, string $folderId, string $path): ?string {
+		$segments = explode('/', $path);
+		$name = array_pop($segments);
+		foreach ($segments as $segment) {
+			$matches = array_filter($this->json('GET', 'filesystem/' . $folderId . '/folders', NULL, $session)['json']['result'], fn($f) => $f['name'] === $segment);
+			if (!$matches) {
+				return NULL;
+			}
+			$folderId = current($matches)['id'];
+		}
+		$matches = array_filter($this->listFiles($folderId, $session), fn($f) => $f['name'] === $name);
+		return $matches ? $this->http('GET', 'filesystem/' . current($matches)['id'] . '?session=' . $session)['body'] : NULL;
 	}
 
 	private function zipEntries(string $bytes): array {
@@ -310,16 +327,15 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		// compress into the managed folder, then extract it next to the archive
 		$compress = $this->json('POST', 'archiver/compress', array('items' => array($albumId), 'folder' => $folderId, 'name' => 'packed'), $session);
 		$this->assertSame(200, $compress['status'], $compress['body']);
-		$this->assertFileExists($root . '/packed.zip');
-		$this->assertSame($expected, $this->zipEntries(file_get_contents($root . '/packed.zip')));
+		$this->assertSame($expected, $this->zipEntries($this->managedFile($session, $folderId, 'packed.zip')));
 		$duplicate = $this->json('POST', 'archiver/compress', array('items' => array($albumId), 'folder' => $folderId, 'name' => 'packed'), $session);
 		$this->assertNotSame(200, $duplicate['status']);
 
 		$zipId = current(array_filter($this->listFiles($folderId, $session), fn($f) => $f['name'] === 'packed.zip'))['id'];
 		$extract = $this->json('POST', 'archiver/extract', array('item' => $zipId), $session);
 		$this->assertSame(200, $extract['status'], $extract['body']);
-		$this->assertSame(md5($binary), md5_file($root . '/packed_zip/album/cover.bin'));
-		$this->assertSame("caf\xc3\xa9\n", file_get_contents($root . '/packed_zip/album/nested/notes.txt'));
+		$this->assertSame(md5($binary), md5($this->managedFile($session, $folderId, 'packed_zip/album/cover.bin')));
+		$this->assertSame("caf\xc3\xa9\n", $this->managedFile($session, $folderId, 'packed_zip/album/nested/notes.txt'));
 	}
 
 	public function testThumbnailsAreGeneratedOverHttpForSupportedImages(): void {
@@ -393,5 +409,34 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$this->assertSame('plain notes', $plain['body']);
 		$this->assertSame(array('report.pdf', 'notes.txt'), array_values(array_intersect(array('report.pdf', 'notes.txt'), array_diff(scandir($root), array('.', '..')))));
 		$this->assertSame(array(), glob(sys_get_temp_dir() . '/Kloudspeaker*'), 'temporary watermarked files are removed');
+	}
+
+	private function requireExternalServer(): void {
+		if (!getenv('KLOUDSPEAKER_HTTP_BASE_URL')) {
+			$this->markTestSkipped('Needs the Apache of the Compose "web" profile');
+		}
+	}
+
+	public function testShippedHtaccessBlocksDirectAccessToTheIncludeDirectoryOnApache24(): void {
+		$this->requireExternalServer();
+		$this->startServer(array('plugins' => array()));
+		$blocked = $this->http('GET', '../include/Settings.class.php');
+		$this->assertSame(403, $blocked['status'], 'the 2.2-style "deny from all" must still work on Apache 2.4');
+		$this->assertNotSame(403, $this->http('GET', 'session/info')['status'], 'the API itself stays reachable');
+		$open = file_get_contents($this->baseUrl . '/db/DBConnectionFactory.class.php', FALSE, stream_context_create(array('http' => array('ignore_errors' => TRUE))));
+		$this->assertStringNotContainsString('<?php', (string) $open, 'source is never served as text');
+	}
+
+	public function testClientAddressIsTakenFromForwardingHeadersOnApache(): void {
+		$this->requireExternalServer();
+		$pdo = $this->startServer(array('plugins' => array()));
+		$this->createUser($pdo, 1, 'proxied', 'proxy-pw');
+		$direct = $this->login('proxied', 'proxy-pw');
+		$response = $this->http('POST', 'session/authenticate', array('Content-Type: application/json', 'X-Forwarded-For: 203.0.113.9'), json_encode(array('username' => 'proxied', 'password' => base64_encode('proxy-pw'))));
+		$this->assertSame(200, $response['status'], $response['body']);
+		$addresses = $pdo->query('SELECT ip FROM session ORDER BY time, id')->fetchAll(PDO::FETCH_COLUMN);
+		$this->assertCount(2, $addresses);
+		$this->assertDoesNotMatchRegularExpression('/203\.0\.113\.9/', $addresses[0]);
+		$this->assertMatchesRegularExpression('/^203\.0\.113\.9 via \d+\.\d+\.\d+\.\d+$/', $addresses[1]);
 	}
 }

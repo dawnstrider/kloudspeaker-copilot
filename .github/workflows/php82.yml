@@ -52,6 +52,16 @@ jobs:
         if: always()
         run: $COMPOSE --profile database --profile postgres --profile mail down
 
+  apache-http:
+    name: HTTP workflows on Apache 2.4
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: $COMPOSE --profile web run --build --rm web-tests
+      - name: Remove test servers, networks and volume
+        if: always()
+        run: $COMPOSE --profile web down -v
+
   package:
     name: Reproducible release package
     runs-on: ubuntu-latest

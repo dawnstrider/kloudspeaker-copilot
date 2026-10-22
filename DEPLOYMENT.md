@@ -67,10 +67,25 @@ restore into an isolated environment to confirm: login works, a known file
 downloads with the expected checksum, and permissions/shares are present. SQLite
 databases are single files; copy them only while the application is stopped.
 
+## Web server notes (verified on Apache 2.4 + mod_php)
+
+- Document root: the `backend/` directory; requests look like `/r.php/<service>/...`
+  and need path info enabled (the default for PHP handlers).
+- Protect `backend/include/` with `backend/include/apache/htaccess` copied to
+  `include/.htaccess` (and `AllowOverride` enabled for it). It uses Apache 2.2
+  syntax and works on 2.4 only while `mod_access_compat` is loaded; otherwise
+  replace it with `Require all denied`.
+- Client addresses come from `X-Forwarded-For` when Apache provides it. Anyone can
+  send that header; do not treat the logged address as authenticated.
+- A client that disconnects during a streamed upload no longer leaves a truncated
+  file behind (the received size must equal `Content-Length`).
+- Archives created in managed folders are mode 0600; adjust if other accounts must
+  read them.
+
 ## Not yet verified
 
-- Apache or nginx + PHP-FPM behavior, HTTPS, browser workflows and cookie
-  attributes (the application sets no `HttpOnly`/`Secure`/`SameSite`).
+- nginx or PHP-FPM behavior, HTTPS, browser workflows and cookie attributes (the
+  application sets no `HttpOnly`/`Secure`/`SameSite`).
 - Successful SMTP TLS/certificate negotiation and real-world mail delivery.
 - Real customer PDFs for watermarking, Windows/network filesystem behavior,
   ownership/ACLs and concurrent changes.

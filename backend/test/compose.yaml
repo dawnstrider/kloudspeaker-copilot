@@ -166,8 +166,74 @@ services:
       - /workspace/backend/test/phpunit.xml
       - /workspace/backend/test/MailIntegrationTest.php
 
+  web-data-init:
+    image: kloudspeaker-php82-tests
+    profiles: [web]
+    user: "0:0"
+    read_only: true
+    cap_drop: [ALL]
+    cap_add: [CHOWN, FOWNER, DAC_OVERRIDE]
+    network_mode: none
+    volumes:
+      - web-data:/srv/web
+    command: [chmod, "1777", /srv/web]
+
+  apache:
+    build:
+      context: .
+      dockerfile: Dockerfile.apache
+    image: kloudspeaker-php82-apache
+    profiles: [web]
+    read_only: true
+    user: "33:33"
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:rw,nosuid,nodev,size=64m,mode=1777
+      - /var/run/apache2:rw,nosuid,nodev,mode=1777
+      - /var/lock/apache2:rw,nosuid,nodev,mode=1777
+    volumes:
+      - ../..:/workspace:ro
+      - web-data:/srv/web
+    networks: [web-tests]
+    depends_on:
+      web-data-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, php, -r, "exit(@fsockopen('127.0.0.1', 8080) ? 0 : 1);"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+  web-tests:
+    <<: *test-runner
+    profiles: [web]
+    user: "33:33"  # the same user as the web server, so each side can clean up what the other created
+    environment:
+      KLOUDSPEAKER_HTTP_BASE_URL: http://apache:8080
+      KLOUDSPEAKER_HTTP_SHARED_DIR: /srv/web
+    volumes:
+      - ../..:/workspace:ro
+      - web-data:/srv/web
+    networks: [web-tests]
+    depends_on:
+      apache:
+        condition: service_healthy
+    command:
+      - php
+      - /opt/test-tools/vendor/bin/phpunit
+      - --configuration
+      - /workspace/backend/test/phpunit.web.xml
+
 networks:
   database-tests:
     internal: true
   mail-tests:
     internal: true
+  web-tests:
+    internal: true
+
+volumes:
+  web-data:

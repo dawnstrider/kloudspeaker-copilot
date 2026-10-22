@@ -223,3 +223,21 @@ with all plugin tables, admin login through the real backend, and the 2_6_7 to
 MariaDB database and drops its tables afterwards. PostgreSQL has no equivalent:
 the shipped PostgreSQL install SQL is obsolete MySQL syntax (see
 PHP82-MIGRATION.md).
+
+## Apache Workflow Checks
+
+The `web` profile builds Dockerfile.apache (Apache 2.4 + mod_php 8.2.35, same
+extensions as the application needs) and runs HttpTest.php against it:
+
+```powershell
+docker compose -f backend/test/compose.yaml --profile web run --build --rm web-tests
+docker compose -f backend/test/compose.yaml --profile web down -v
+```
+
+Apache and the runner sit on an internal network (no published ports) and share the
+`web-data` volume; both run as uid 33 so each can clean up what the other writes.
+The vhost (apache-vhost.conf) serves backend/ and puts test/http first on the include
+path, so the same test configuration is used as with the built-in server. Settings for
+each test are written to `current/settings.json` on the shared volume. Two tests only
+run here: the shipped htaccess under Apache 2.4 and the `X-Forwarded-For` handling.
+Run `down -v` afterwards to drop the volume.

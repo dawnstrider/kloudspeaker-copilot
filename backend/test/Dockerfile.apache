@@ -1,0 +1,16 @@
+FROM php:8.2.35-apache@sha256:fa8966fbaaa06981e549e7a33eb8a68f4cf677d6a82e1d6350adc5d85fe8f740
+
+# Same extensions as the CLI test image that the application uses (no database drivers other than SQLite are needed here).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libfreetype6-dev libjpeg62-turbo-dev libpng-dev libzip-dev \
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install -j2 gd zip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Test-only Apache setup: listen unprivileged, serve backend/ as the document root, and create files world-accessible
+# so the separate test-runner user can inspect and clean up what the web server writes into the shared volume.
+COPY apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+RUN sed -i 's/^Listen 80$/Listen 8080/' /etc/apache2/ports.conf \
+    && echo 'umask 0000' >> /etc/apache2/envvars
+
+EXPOSE 8080

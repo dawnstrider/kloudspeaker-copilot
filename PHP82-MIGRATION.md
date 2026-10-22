@@ -45,7 +45,7 @@ Status as of 2026-10-22 (details in the progress notes below):
 4. Real HTTP/browser workflows: authentication, cookies, permissions, byte-exact
    upload/download, ranges, public shares and interrupted transfers pass on the PHP
    built-in server, as do archives, thumbnails and watermarked PDFs. Open:
-   Apache/nginx + PHP-FPM, HTTPS, browser (JavaScript) flows.
+   nginx, PHP-FPM, HTTPS, browser (JavaScript) flows. Apache 2.4 + mod_php passes.
 5. Not started: SMTP TLS/certificate negotiation, representative customer PDFs,
    Windows/platform filesystems, ownership/ACLs, concurrent changes, very large
    archives.
@@ -107,7 +107,7 @@ Status as of 2026-10-22 (details in the progress notes below):
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 165 tests, 1077 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 167 tests (2 skipped), 1076 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
   `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
@@ -135,6 +135,23 @@ Status as of 2026-10-22 (details in the progress notes below):
   A watermarked PDF download over HTTP keeps the source text and adds the
   watermark text, excluded users get the original bytes, other types are untouched
   and no temporary files remain.
+- Item 4, Apache: the Compose `web` profile runs the same HttpTest.php against Apache
+  2.4 with mod_php 8.2.35 (backend/test/Dockerfile.apache, apache-vhost.conf,
+  phpunit.web.xml) on an internal network, sharing a volume with a runner that has the
+  web server's uid. All 12 shared HTTP tests plus two Apache-only ones pass: the
+  shipped backend/include/apache/htaccess (Apache 2.2 `deny from all`) still answers
+  403 on 2.4 (it relies on mod_access_compat, which this image enables), and the
+  `apache_request_headers()` branch records `X-Forwarded-For` as
+  `<header> via <peer>` in `session.ip` (any client can set that header, so it is a
+  label and not evidence). Still not run: PHP-FPM, nginx, HTTPS.
+- Found by the Apache run and fixed: an upload dropped mid-body left a truncated file
+  in the managed folder (PHP's built-in server discards such requests, Apache runs the
+  script with the partial body). A streamed upload now compares the received size with
+  `Content-Length` and deletes the file with an `UPLOAD_FAILED` error if they differ
+  (multipart and ranged/chunked uploads are unaffected).
+- Observation, not changed: archives written into a managed folder are created mode
+  0600 (temporary file then rename), so other accounts (backups, shares) cannot read
+  them until their permissions are adjusted.
 - Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
   backend/test/phpunit.database.xml) installs the full schema plus every bundled
   plugin's tables into a prefixed set of tables, logs the new admin in through the
@@ -173,11 +190,12 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 165 tests, 1077 assertions (includes plugin, installer/updater and real-HTTP tests) |
+| Default PHPUnit suite | 167 tests, 1076 assertions, 2 Apache-only tests skipped (includes plugin, installer/updater and real-HTTP tests) |
 | MySQL integration (MariaDB 11.4.13) | 20 tests, 140 assertions (adapter contracts, full-schema install, 2_6_7 to 2_7_28 upgrade, plugin upgrades) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| Total | 202 tests, 1401 assertions |
+| HTTP workflows on Apache 2.4 + mod_php (web profile) | 14 tests, 138 assertions |
+| Total | 218 tests, 1529 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 
