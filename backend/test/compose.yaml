@@ -25,6 +25,37 @@ services:
       - -c
       - php /workspace/backend/test/CompatibilityTest.php && php /opt/test-tools/vendor/bin/phpunit --configuration /workspace/backend/test/phpunit.xml
 
+  lint:
+    <<: *test-runner
+    profiles: [lint]
+    network_mode: none
+    command:
+      - sh
+      - -c
+      - |
+        set -u
+        php -v | head -1
+        count=0
+        bad=0
+        for f in $$(find /workspace/backend -name '*.php'); do
+          count=$$((count + 1))
+          if ! out=$$(php -l "$$f" 2>&1); then
+            bad=$$((bad + 1))
+            echo "$$out"
+          fi
+        done
+        echo "linted $$count files, $$bad with diagnostics"
+        [ "$$bad" -eq 0 ]
+
+  package:
+    <<: *test-runner
+    profiles: [package]
+    network_mode: none
+    volumes:
+      - ../..:/workspace:ro
+      - ${KLOUDSPEAKER_DIST:-../../dist}:/out
+    command: [php, /workspace/tools/build-release.php, /out]
+
   mariadb:
     image: mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
     profiles: [database]

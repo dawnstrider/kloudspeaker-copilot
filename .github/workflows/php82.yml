@@ -1,0 +1,70 @@
+name: PHP 8.2 gates
+
+# Runs the same digest-pinned Docker runners that are documented in backend/test/README.md.
+# Nothing here touches production configuration, data or services.
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  COMPOSE: docker compose -f backend/test/compose.yaml
+
+jobs:
+  lint:
+    name: Lint all PHP (8.2, no exclusions)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: $COMPOSE --profile lint run --build --rm lint
+
+  default-suite:
+    name: Default suite (compatibility checks, services, plugins, installer, HTTP)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: $COMPOSE run --build --rm tests
+      - name: Randomized order
+        run: >-
+          $COMPOSE run --rm tests php /opt/test-tools/vendor/bin/phpunit
+          --configuration /workspace/backend/test/phpunit.xml
+          --order-by=random --random-order-seed=82
+
+  integration:
+    name: ${{ matrix.profile }} integration
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - profile: database
+            service: database-tests
+          - profile: postgres
+            service: postgres-tests
+          - profile: mail
+            service: mail-tests
+    steps:
+      - uses: actions/checkout@v4
+      - run: $COMPOSE --profile ${{ matrix.profile }} run --build --rm ${{ matrix.service }}
+      - name: Remove test servers and networks
+        if: always()
+        run: $COMPOSE --profile database --profile postgres --profile mail down
+
+  package:
+    name: Reproducible release package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build twice and compare
+        run: |
+          mkdir -p dist/a dist/b
+          KLOUDSPEAKER_DIST=$PWD/dist/a $COMPOSE --profile package run --build --rm package
+          KLOUDSPEAKER_DIST=$PWD/dist/b $COMPOSE --profile package run --rm package
+          cmp dist/a/kloudspeaker-*.zip dist/b/kloudspeaker-*.zip
+          cmp dist/a/SHA256SUMS dist/b/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kloudspeaker-release
+          path: dist/a/
