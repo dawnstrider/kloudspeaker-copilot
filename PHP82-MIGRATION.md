@@ -39,9 +39,9 @@ Status as of 2026-10-22 (details in the progress notes below):
    updater tested; runtime preflight added). The web-SAPI/CLI difference still
    needs checking on the real host.
 3. Schema, fresh install, upgrade and rollback per database: SQLite and MySQL are
-   certified for fresh install and 2_6_7 to 2_7_28 (rollback on SQLite). Open:
-   **PostgreSQL cannot be installed** (needs a decision), MySQL rollback of a
-   failed step, plugin version upgrades.
+   certified for fresh install, 2_6_7 to 2_7_28 and plugin upgrades (rollback only
+   on SQLite; MySQL steps are not atomic). Open: **PostgreSQL cannot be installed**
+   (needs a decision) and two adapter inconsistencies listed below.
 4. Real HTTP/browser workflows: authentication, cookies, permissions, byte-exact
    upload/download, ranges, public shares and interrupted transfers pass on the PHP
    built-in server. Open: Apache/nginx + PHP-FPM, HTTPS, browser (JavaScript)
@@ -107,7 +107,7 @@ Status as of 2026-10-22 (details in the progress notes below):
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 159 tests, 1026 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 162 tests, 1041 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
   `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
@@ -133,6 +133,21 @@ Status as of 2026-10-22 (details in the progress notes below):
   plugin's tables into a prefixed set of tables, logs the new admin in through the
   real backend, and upgrades a 2_6_7-state schema to 2_7_28 with every item id and
   level preserved; each test drops its own tables.
+- Item 3, plugin upgrades: Notificator 1_0, Registration 1_0 and Share 1_1 (SQLite)
+  or 1_0 (MySQL) are upgraded to the current plugin versions in tests with all rows
+  preserved. This found and fixed a real bug in the shipped SQLite scripts:
+  `plugin/Share/sqlite/1_2-1_3.sql` and `1_3-1_4.sql` copied rows back into the
+  recreated `share` table by position although its column order had changed, so the
+  upgrade failed on a NOT NULL constraint (or would have scrambled columns); both
+  now use explicit column lists. Other positional inserts were audited and match.
+- Item 3, rollback: SQLite steps roll back and can be retried. MySQL commits DDL
+  implicitly, so a failed step is **not atomic** (a characterization test shows the
+  ALTERs that ran stay applied while the version stays old); the only recovery is
+  restoring the backup taken before updating.
+- Unresolved inconsistencies found, not changed: SQLite Share `1_4-1_5` marks existing
+  shares `quick = 1` while MySQL leaves them `quick = 0`; SQLite has no Share
+  `1_0-1_1.sql` although the history lists `1_0` (unreachable only if SQLite never
+  shipped Share 1.0). Both need an owner's decision about the intended behavior.
 - Item 3, PostgreSQL (confirmed on PostgreSQL 17.11): `PostgresqlDatabase` has no
   `execSqlFile`, there is no PostgreSQL installer or update script, and
   db/postgresql/sql/install/*.sql is MySQL syntax (backticks, `ENGINE`,
@@ -151,11 +166,11 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 159 tests, 1026 assertions (includes plugin, installer/updater and real-HTTP tests) |
-| MySQL integration (MariaDB 11.4.13) | 16 tests, 101 assertions (adapter contracts plus full-schema install and 2_6_7 to 2_7_28 upgrade) |
+| Default PHPUnit suite | 162 tests, 1041 assertions (includes plugin, installer/updater and real-HTTP tests) |
+| MySQL integration (MariaDB 11.4.13) | 20 tests, 140 assertions (adapter contracts, full-schema install, 2_6_7 to 2_7_28 upgrade, plugin upgrades) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| Total | 192 tests, 1302 assertions |
+| Total | 199 tests, 1364 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 

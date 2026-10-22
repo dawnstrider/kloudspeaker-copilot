@@ -52,9 +52,11 @@ notes; `backend/example/` has configuration templates.
 
 1. Take the backups described below and verify they restore.
 2. Run the updater against a **copy** of the database first.
-3. SQLite and MySQL upgrades from 2_6_7 to 2_7_28 are tested with item ids
-   preserved; a failed step is rolled back (tested on SQLite). PostgreSQL has no
-   upgrade path. Plugin version upgrades are not yet tested.
+3. SQLite and MySQL upgrades from 2_6_7 to 2_7_28 and the Notificator, Registration
+   and Share plugin upgrades are tested with data preserved. A failed SQLite step
+   is rolled back; **MySQL commits schema changes implicitly, so a failed MySQL
+   step is not undone**: restore the backup rather than retrying. PostgreSQL has
+   no upgrade path.
 
 ## Backup and restore
 

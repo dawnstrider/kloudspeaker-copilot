@@ -203,4 +203,68 @@ class KloudspeakerInstallerTest extends \PHPUnit\Framework\TestCase {
 		$this->assertSame('2_7_28', $updater->installedVersion());
 		$this->assertSame('1:docs/', $updater->db()->query("SELECT path FROM item_id WHERE id = '4f1c2a9b8d7e6'")->value(0));
 	}
+
+	/** Core schema at the current version, with the named plugins registered but not installed. */
+	private function updaterWithCoreSchema(array $plugins): array {
+		$pdo = new PDO('sqlite:' . $this->file);
+		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$pdo->exec(file_get_contents(__DIR__ . '/../db/sqlite/sql/install/create_tables.sql'));
+		$pdo->exec(file_get_contents(__DIR__ . '/../db/sqlite/sql/install/params.sql'));
+		$settings = array('debug' => FALSE, 'timezone' => 'Europe/Helsinki', 'plugins' => array_fill_keys($plugins, array()), 'host_public_address' => 'http://kloudspeaker.test', 'db' => array('str' => 'sqlite:' . $this->file, 'user' => '', 'password' => ''));
+		$updater = new PDOUpdater($settings);
+		$updater->init();
+		$updater->processor()->createEnvironment($updater->db());
+		return array($pdo, $updater, new UpdateController($updater), new ReflectionMethod(UpdateController::class, 'updatePlugin'));
+	}
+
+	private function upgradePlugin(string $id, PDO $pdo, PDOUpdater $updater, UpdateController $controller, ReflectionMethod $update): string {
+		$plugins = $updater->processor()->plugins()->getPlugins();
+		$updater->db()->startTransaction();
+		$result = $update->invoke($controller, $id, $plugins[$id]);
+		$updater->db()->commit();
+		$this->assertSame($plugins[$id]->version(), $updater->pluginInstalledVersion($id));
+		return $result;
+	}
+
+	public function testNotificatorUpgradeFrom10KeepsNotificationsAndAddsFilters(): void {
+		list($pdo, $updater, $controller, $update) = $this->updaterWithCoreSchema(array('Notificator'));
+		$pdo->exec("INSERT INTO parameter (name, value) VALUES ('plugin_Notificator_version', '1_0')");
+		$pdo->exec("CREATE TABLE notificator_notification (id INTEGER PRIMARY KEY, name varchar(255) NOT NULL, message_title varchar(255) NOT NULL DEFAULT '', message varchar(512) NOT NULL DEFAULT '')");
+		$pdo->exec("CREATE TABLE notificator_notification_event (notification_id int(11) NOT NULL, event_type varchar(128) NOT NULL)");
+		$pdo->exec("INSERT INTO notificator_notification (id, name, message_title, message) VALUES (1, 'uploads', 'Upload', 'A file arrived')");
+		$pdo->exec("INSERT INTO notificator_notification_event (notification_id, event_type) VALUES (1, 'filesystem/upload'), (1, 'filesystem/delete')");
+
+		$this->assertSame('Plugin Notificator updated to 1.1', $this->upgradePlugin('Notificator', $pdo, $updater, $controller, $update));
+		$events = $pdo->query('SELECT id, notification_id, event_type FROM notificator_notification_event ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		$this->assertSame(array('filesystem/upload', 'filesystem/delete'), array_column($events, 'event_type'));
+		$this->assertNotNull($events[0]['id']);
+		$pdo->exec("INSERT INTO notificator_notification_event_filter (notification_event_id, type, value) VALUES (" . $events[0]['id'] . ", 'item_name', '*.txt')");
+		$this->assertSame('uploads', $pdo->query('SELECT name FROM notificator_notification')->fetchColumn());
+	}
+
+	public function testRegistrationUpgradeFrom10KeepsPendingRegistrations(): void {
+		list($pdo, $updater, $controller, $update) = $this->updaterWithCoreSchema(array('Registration'));
+		$pdo->exec("INSERT INTO parameter (name, value) VALUES ('plugin_Registration_version', '1_0')");
+		$pdo->exec("CREATE TABLE pending_registrations (id INTEGER PRIMARY KEY, name varchar(255) NOT NULL, password varchar(128) NOT NULL, email varchar(128) NOT NULL, key char(64) NOT NULL, time bigint(11) NOT NULL)");
+		$pdo->exec("INSERT INTO pending_registrations (id, name, password, email, key, time) VALUES (7, 'pending', 'c2VjcmV0', 'pending@example.test', 'abc123', 20240101120000)");
+
+		$this->assertSame('Plugin Registration updated to 1.2', $this->upgradePlugin('Registration', $pdo, $updater, $controller, $update));
+		$row = $pdo->query('SELECT id, name, password, email, key, time, confirmed, password_hint FROM registration')->fetch(PDO::FETCH_ASSOC);
+		$this->assertEquals(array('id' => 7, 'name' => 'pending', 'password' => 'c2VjcmV0', 'email' => 'pending@example.test', 'key' => 'abc123', 'time' => 20240101120000, 'confirmed' => NULL, 'password_hint' => NULL), $row);
+		$this->assertFalse($pdo->query("SELECT 1 FROM sqlite_master WHERE name = 'pending_registrations'")->fetchColumn());
+	}
+
+	public function testShareUpgradeFrom11To15KeepsShares(): void {
+		list($pdo, $updater, $controller, $update) = $this->updaterWithCoreSchema(array('Share'));
+		$pdo->exec("INSERT INTO parameter (name, value) VALUES ('plugin_Share_version', '1_1')");
+		$pdo->exec("CREATE TABLE share (id char(32) PRIMARY KEY, item_id char(255) NOT NULL, name varchar(255) NOT NULL, user_id INTEGER NOT NULL, expiration bigint(11) NULL, created bigint(11) NOT NULL, active TINYINT(1) NOT NULL)");
+		$pdo->exec("INSERT INTO share (id, item_id, name, user_id, expiration, created, active) VALUES ('AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'item1', 'first', 5, NULL, 20240101000000, 1), ('BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', 'item2', 'second', 6, 20991231235959, 20240102000000, 0)");
+
+		$this->assertSame('Plugin Share updated to 1.5', $this->upgradePlugin('Share', $pdo, $updater, $controller, $update));
+		$rows = $pdo->query('SELECT id, item_id, type, restriction, name, user_id, expiration, created, quick, active FROM share ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		$this->assertCount(2, $rows);
+		$this->assertEquals(array('id' => 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'item_id' => 'item1', 'type' => NULL, 'restriction' => NULL, 'name' => 'first', 'user_id' => 5, 'expiration' => NULL, 'created' => 20240101000000, 'quick' => 1, 'active' => 1), $rows[0]);
+		$this->assertEquals(array('id' => 'BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB', 'item_id' => 'item2', 'type' => NULL, 'restriction' => NULL, 'name' => 'second', 'user_id' => 6, 'expiration' => 20991231235959, 'created' => 20240102000000, 'quick' => 1, 'active' => 0), $rows[1]);
+		$this->assertNotFalse($pdo->query("SELECT 1 FROM sqlite_master WHERE name = 'share_auth'")->fetchColumn());
+	}
 }
