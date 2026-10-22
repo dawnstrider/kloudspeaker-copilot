@@ -263,4 +263,89 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$this->assertSame(md5($payload), md5_file($root . '/whole.bin'));
 		$this->assertSame(array('whole.bin'), array_values(array_diff(scandir($root), array('.', '..'))));
 	}
+
+	private function zipEntries(string $bytes): array {
+		$path = $this->baseDir . '/check-' . bin2hex(random_bytes(3)) . '.zip';
+		file_put_contents($path, $bytes);
+		$zip = new ZipArchive();
+		$this->assertTrue($zip->open($path) === TRUE, 'not a valid zip');
+		$entries = array();
+		for ($i = 0; $i < $zip->numFiles; $i++) {
+			$name = $zip->getNameIndex($i);
+			if (substr($name, -1) !== '/') {
+				$entries[$name] = md5($zip->getFromIndex($i));
+			}
+		}
+		$zip->close();
+		unlink($path);
+		ksort($entries);
+		return $entries;
+	}
+
+	public function testArchiveDownloadCompressAndExtractRoundTripOverHttp(): void {
+		list($session, $folderId, $root) = $this->startWithFolder(array('plugins' => array('Archiver' => array())));
+		$binary = $this->binaryPayload(200000);
+		mkdir($root . '/album/nested', 0777, TRUE);
+		file_put_contents($root . '/album/cover.bin', $binary);
+		file_put_contents($root . '/album/nested/notes.txt', "caf\xc3\xa9\n");
+		file_put_contents($root . '/loose.txt', 'loose');
+		$folders = $this->json('GET', 'filesystem/' . $folderId . '/folders', NULL, $session)['json']['result'];
+		$albumId = $folders[0]['id'];
+		$looseId = current(array_filter($this->listFiles($folderId, $session), fn($f) => $f['name'] === 'loose.txt'))['id'];
+		$expected = array('album/cover.bin' => md5($binary), 'album/nested/notes.txt' => md5("caf\xc3\xa9\n"));
+
+		// one-step download of a folder
+		$direct = $this->http('GET', 'archiver/download?item=' . $albumId . '&session=' . $session);
+		$this->assertSame(200, $direct['status'], substr($direct['body'], 0, 200));
+		$this->assertSame($expected, $this->zipEntries($direct['body']));
+
+		// two-step download of several items
+		$prepared = $this->json('POST', 'archiver/download', array('items' => array($albumId, $looseId)), $session);
+		$this->assertSame(200, $prepared['status'], $prepared['body']);
+		$multi = $this->http('GET', 'archiver/download/' . $prepared['json']['result']['id'] . '?session=' . $session);
+		$this->assertSame($expected + array('loose.txt' => md5('loose')), $this->zipEntries($multi['body']) + array());
+		$again = $this->http('GET', 'archiver/download/' . $prepared['json']['result']['id'] . '?session=' . $session);
+		$this->assertNotSame(200, $again['status'], 'a prepared archive can be fetched only once');
+
+		// compress into the managed folder, then extract it next to the archive
+		$compress = $this->json('POST', 'archiver/compress', array('items' => array($albumId), 'folder' => $folderId, 'name' => 'packed'), $session);
+		$this->assertSame(200, $compress['status'], $compress['body']);
+		$this->assertFileExists($root . '/packed.zip');
+		$this->assertSame($expected, $this->zipEntries(file_get_contents($root . '/packed.zip')));
+		$duplicate = $this->json('POST', 'archiver/compress', array('items' => array($albumId), 'folder' => $folderId, 'name' => 'packed'), $session);
+		$this->assertNotSame(200, $duplicate['status']);
+
+		$zipId = current(array_filter($this->listFiles($folderId, $session), fn($f) => $f['name'] === 'packed.zip'))['id'];
+		$extract = $this->json('POST', 'archiver/extract', array('item' => $zipId), $session);
+		$this->assertSame(200, $extract['status'], $extract['body']);
+		$this->assertSame(md5($binary), md5_file($root . '/packed_zip/album/cover.bin'));
+		$this->assertSame("caf\xc3\xa9\n", file_get_contents($root . '/packed_zip/album/nested/notes.txt'));
+	}
+
+	public function testThumbnailsAreGeneratedOverHttpForSupportedImages(): void {
+		list($session, $folderId, $root) = $this->startWithFolder(array('enable_thumbnails' => TRUE));
+		$image = imagecreatetruecolor(800, 400);
+		imagefill($image, 0, 0, imagecolorallocate($image, 200, 30, 30));
+		ob_start();
+		imagepng($image);
+		$png = ob_get_clean();
+		imagedestroy($image);
+		file_put_contents($root . '/photo.png', $png);
+		file_put_contents($root . '/plain.txt', 'text');
+		$files = $this->listFiles($folderId, $session);
+		$photoId = current(array_filter($files, fn($f) => $f['name'] === 'photo.png'))['id'];
+		$textId = current(array_filter($files, fn($f) => $f['name'] === 'plain.txt'))['id'];
+
+		$thumbnail = $this->http('GET', 'filesystem/' . $photoId . '/thumbnail?mw=100&mh=100&session=' . $session);
+		$this->assertSame(200, $thumbnail['status'], substr($thumbnail['body'], 0, 200));
+		$size = getimagesizefromstring($thumbnail['body']);
+		$this->assertNotFalse($size, 'the thumbnail is an image');
+		$this->assertLessThanOrEqual(100, max($size[0], $size[1]));
+		$this->assertSame(2, intdiv(max($size[0], $size[1]), min($size[0], $size[1])));
+
+		$unsupported = $this->http('GET', 'filesystem/' . $textId . '/thumbnail?session=' . $session);
+		$this->assertNotSame(200, $unsupported['status']);
+		$anonymous = $this->http('GET', 'filesystem/' . $photoId . '/thumbnail');
+		$this->assertSame(401, $anonymous['status']);
+	}
 }

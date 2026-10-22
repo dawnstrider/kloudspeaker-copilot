@@ -107,7 +107,7 @@ Status as of 2026-10-22 (details in the progress notes below):
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 162 tests, 1041 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 164 tests, 1065 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
   `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
@@ -128,6 +128,10 @@ Status as of 2026-10-22 (details in the progress notes below):
   buffering, `session.*`), HTTPS and cookie attributes (the app sets no
   `HttpOnly`/`Secure`/`SameSite`, which is unchanged behavior) and browser flows
   are still unverified.
+- Item 4, archives and images over HTTP: one-step and prepared (single-use) zip
+  downloads of folders and several items, compress into a managed folder with
+  duplicate rejection, extract, and GD thumbnails (size bound, unsupported type,
+  anonymous denial) are tested with checksum comparison of the zip entries.
 - Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
   backend/test/phpunit.database.xml) installs the full schema plus every bundled
   plugin's tables into a prefixed set of tables, logs the new admin in through the
@@ -166,11 +170,11 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 162 tests, 1041 assertions (includes plugin, installer/updater and real-HTTP tests) |
+| Default PHPUnit suite | 164 tests, 1065 assertions (includes plugin, installer/updater and real-HTTP tests) |
 | MySQL integration (MariaDB 11.4.13) | 20 tests, 140 assertions (adapter contracts, full-schema install, 2_6_7 to 2_7_28 upgrade, plugin upgrades) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| Total | 199 tests, 1364 assertions |
+| Total | 201 tests, 1388 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 
