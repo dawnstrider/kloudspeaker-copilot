@@ -72,8 +72,21 @@ The checklist describes tested components, not whole-application certification.
   shares, key check, prepared folder download as a zip); `Session::param()` and
   `FilesystemController::download()` null reads fixed like `view()`. Public upload
   needs a real HTTP multipart request and is still unverified.
-- Plugin item 1 remains open only for upload-based flows (they need item 4's real
-  HTTP/multipart harness); ItemDetails has no server code.
+- Item 1 is complete. backend/test/HttpTest.php runs the real r.php (with its
+  throwing global error handler) under the PHP built-in server on loopback, using
+  an isolated SQLite file database (backend/test/http/ router and configuration,
+  HttpTestCase.php). Covered: login/session, streamed and multipart upload with
+  byte-exact comparison (1 MiB binary), whole and ranged download, duplicate-name
+  renaming, forbidden types, anonymous/outsider denial, public share upload
+  (open, private, password key, session) and download. This also starts item 4
+  (real HTTP); cookies, browser flows and interrupted transfers are still open.
+- Fixed from it: `POST filesystem/<id>/info` and `filesystem/roots/info` returned
+  HTTP 500 when the body lacked `data` (undefined-key read made an exception by
+  r.php's handler); they now treat it as absent.
+- Found, not fixed (also PHP 7): a ranged download sends `Content-Length` for the
+  range but the body continues to the end of the file (`downloadBinary` streams
+  the total size from the range start). Clients that honor Content-Length stop in
+  time; others receive extra bytes.
 - Item 2 progress: backend/test/InstallerTest.php runs a fresh PDO/SQLite install
   (schema, params, every bundled plugin's install.sql, admin user) against a temp
   file and logs the admin in through the real backend; it also drives the updater's
@@ -82,7 +95,7 @@ The checklist describes tested components, not whole-application certification.
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 148 tests, 915 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 154 tests, 969 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Found for item 3, not changed (schema/version declarations need approval): a
   fresh PDO install writes version `2_7_28` (params.sql) but the PDO

@@ -56,7 +56,7 @@ class FilesystemServices extends ServicesBase {
 		}
 
 		if ($this->path[0] === 'roots' and $this->path[1] === 'info') {
-			$this->response()->success($this->getFolderInfo(NULL, FALSE, $this->request->data["data"]));
+			$this->response()->success($this->getFolderInfo(NULL, FALSE, isset($this->request->data["data"]) ? $this->request->data["data"] : NULL));
 			return;
 		}
 
@@ -382,7 +382,7 @@ class FilesystemServices extends ServicesBase {
 				return;
 			case 'info':
 				$includeHierarchy = ($this->request->hasParam("h") and strcmp($this->request->param("h"), "1") == 0);
-				$this->response()->success($this->getFolderInfo($item, $includeHierarchy, $this->request->data["data"]));
+				$this->response()->success($this->getFolderInfo($item, $includeHierarchy, isset($this->request->data["data"]) ? $this->request->data["data"] : NULL));
 				return;
 			case 'fileinfo':
 				if (!isset($this->request->data["files"])) {

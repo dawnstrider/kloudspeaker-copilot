@@ -202,3 +202,14 @@ The ZIP dependency remains unchanged upstream source with manifest hashes checke
 in the suite. See PHP82-MIGRATION.md for extraction limits, staging disk needs,
 zero-entry handling, platform caveats and unverified concurrency/crash/HTTP/load
 and full-application acceptance gates.
+
+## HTTP Workflow Checks
+
+HttpTest.php starts the PHP built-in server on 127.0.0.1 (loopback only, so it also
+runs with `network_mode: none`) and drives the real r.php entry point through
+test/http/router.php. That router puts test/http first on the include path so
+test/http/configuration.php supplies the settings from a JSON file; the database is
+a temporary SQLite file seeded from the shipped schema and each plugin's install.sql.
+r.php keeps its production error handler, so any PHP diagnostic fails a request with
+HTTP 500. Tests compare uploaded and downloaded bytes by checksum and use only
+temporary directories. Start new HTTP tests from Kloudspeaker_HttpTestCase.

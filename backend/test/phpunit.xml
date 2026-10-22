@@ -17,6 +17,7 @@
             <file>ArchiveTest.php</file>
             <file>PluginTest.php</file>
             <file>InstallerTest.php</file>
+            <file>HttpTest.php</file>
         </testsuite>
     </testsuites>
     <php>
