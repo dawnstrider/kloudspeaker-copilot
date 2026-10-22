@@ -35,8 +35,8 @@ KLOUDSPEAKER_DIST=$PWD/dist docker compose -f backend/test/compose.yaml --profil
 The archive is deterministic (sorted entries, fixed timestamps): two builds of
 the same tree are byte-identical, which CI checks. `SHA256SUMS` lists every file and
 the archive itself; verify it on the target before unpacking. The package excludes
-tests, CI files, `backend/configuration.php` (site secrets) and these notes'
-working files; `backend/example/` has configuration templates.
+tests, CI files, `backend/configuration.php` (site secrets) and the migration
+notes; `backend/example/` has configuration templates.
 
 ## Fresh installation
 

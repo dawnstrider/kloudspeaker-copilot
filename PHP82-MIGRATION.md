@@ -30,21 +30,29 @@ The checklist describes tested components, not whole-application certification.
 
 ### Open Work In Order
 
-1. Audit and exercise remaining plugin lifecycle/service paths under E_ALL,
-   including registration, password reset, sharing, notifications, and editing.
-2. Repair remaining installer/updater diagnostics and add runtime/extension
-   preflight checks. Known starting point: the undeclared passwordHash assignment
-   in KloudspeakerInstallProcessor::createEnvironment.
-3. Certify full application schemas, fresh installations, supported upgrade
-   versions, failed upgrades, and rollback for every advertised database path.
-   Passing adapter contracts is not installation/schema certification.
-4. Run real HTTP/browser workflows: authentication/cookies, permissions,
-   upload/download integrity, file operations, previews, and plugin actions.
-5. Verify successful SMTP TLS/certificate negotiation, representative customer
-   PDFs, Windows/platform filesystem behavior, ownership/ACLs, concurrent changes,
-   interrupted downloads/publication, and large/high-entry-count archives.
-6. Add CI gates, a reproducible release package, deployment documentation, and
-   a rehearsed restore of code, database, and managed files together.
+Status as of 2026-10-22 (details in the progress notes below):
+
+1. ~~Plugin lifecycle/service paths under E_ALL~~ Done: every bundled plugin with
+   server code is covered (ItemDetails is client-only), including public share
+   upload over real HTTP.
+2. ~~Installer/updater diagnostics and preflight~~ Done (SQLite/PDO install and
+   updater tested; runtime preflight added). The web-SAPI/CLI difference still
+   needs checking on the real host.
+3. Schema, fresh install, upgrade and rollback per database: SQLite and MySQL are
+   certified for fresh install and 2_6_7 to 2_7_28 (rollback on SQLite). Open:
+   **PostgreSQL cannot be installed** (needs a decision), MySQL rollback of a
+   failed step, plugin version upgrades.
+4. Real HTTP/browser workflows: authentication, cookies, permissions, byte-exact
+   upload/download, ranges, public shares and interrupted transfers pass on the PHP
+   built-in server. Open: Apache/nginx + PHP-FPM, HTTPS, browser (JavaScript)
+   flows, previews/thumbnails over HTTP.
+5. Not started: SMTP TLS/certificate negotiation, representative customer PDFs,
+   Windows/platform filesystems, ownership/ACLs, concurrent changes, very large
+   archives.
+6. CI workflow (.github/workflows/php82.yml), lint gate, reproducible release
+   package (tools/build-release.php) and [DEPLOYMENT.md](DEPLOYMENT.md) exist.
+   Open: the workflow has not run on a CI server, and a restore of code,
+   database and files together has not been rehearsed.
 
 ### Progress Since Checkpoint (2026-10-22)
 
@@ -168,7 +176,7 @@ The default suite can be started from the repository root with:
 docker compose -f backend/test/compose.yaml run --build --rm tests
 ```
 
-Continue with the first unfinished item above. Do not run live installers,
+Continue with the first unfinished item above (item 3's PostgreSQL decision is the blocker). Do not run live installers,
 schema/data conversions, commits, or deployment without explicit approval.
 Production readiness requires all release gates, not just the current test count.
 
