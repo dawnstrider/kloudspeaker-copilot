@@ -178,7 +178,7 @@ class FilesystemServices extends ServicesBase {
 
 	private function processPutFile($item) {
 		if (count($this->path) != 2) {
-			throw invalidRequestException();
+			throw $this->invalidRequestException();
 		}
 
 		$data = $this->request->data;
@@ -258,7 +258,7 @@ class FilesystemServices extends ServicesBase {
 
 	private function processGetFolder($item) {
 		if (count($this->path) != 2) {
-			throw invalidRequestException();
+			throw $this->invalidRequestException();
 		}
 
 		switch (strtolower($this->path[1])) {
@@ -342,7 +342,7 @@ class FilesystemServices extends ServicesBase {
 
 	private function processPutFolder($item) {
 		if (count($this->path) != 2) {
-			throw invalidRequestException();
+			throw $this->invalidRequestException();
 		}
 
 		$data = $this->request->data;

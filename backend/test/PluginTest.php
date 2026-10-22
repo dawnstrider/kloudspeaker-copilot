@@ -375,4 +375,50 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 			}
 		}
 	}
+
+	public function testSendViaEmailPassesTheSelectedFilesToTheMailer(): void {
+		$this->mailer = new Kloudspeaker_CaptureMailer();
+		$settings = array('plugins' => array('SendViaEmail' => array()), 'host_public_address' => 'http://kloudspeaker.test');
+		$root = sys_get_temp_dir() . '/kloudspeaker-mail-' . bin2hex(random_bytes(4));
+		mkdir($root);
+		file_put_contents($root . '/report.txt', 'payload');
+		try {
+			$this->getConnection()->exec("INSERT INTO folder (id, name, path, type) VALUES (1, 'Root', '" . $root . "', 'local')");
+			$this->createUser(70, 'mailer', 'mailer@example.test', 'mailer-pw');
+			$this->getConnection()->exec("INSERT INTO user_folder (user_id, folder_id, name) VALUES (70, 1, NULL)");
+			$this->login('mailer', 'mailer-pw', $settings);
+			$rootId = $this->processRequest('GET', 'session/info', array(), NULL, $settings)['folders'][0]['id'];
+			$listing = $this->processRequest('GET', 'filesystem/' . $rootId . '/files', array(), NULL, $settings);
+			$this->assertSame('report.txt', $listing[0]['name']);
+			$fileId = $listing[0]['id'];
+
+			try {
+				$this->processRequest('GET', 'filesystem/' . $rootId, array(), NULL, $settings);
+				$this->fail('A folder request without an action must be rejected');
+			} catch (ServiceException $e) {
+				$this->assertSame('INVALID_REQUEST', $e->type());
+			}
+
+			try {
+				$this->processRequest('POST', 'sendviaemail', array(), array('to' => 'x@example.test'), $settings);
+				$this->fail('Incomplete requests must be rejected');
+			} catch (ServiceException $e) {
+				$this->assertSame('INVALID_REQUEST', $e->type());
+			}
+			try {
+				$this->processRequest('POST', 'sendviaemail', array(), array('to' => 'x@example.test', 'title' => 't', 'msg' => 'm', 'items' => array()), $settings);
+				$this->fail('A mail without items must be rejected');
+			} catch (ServiceException $e) {
+				$this->assertSame('INVALID_REQUEST', $e->type());
+			}
+
+			$this->processRequest('POST', 'sendviaemail', array(), array('to' => 'friend@example.test', 'title' => 'Report', 'msg' => 'See attached', 'items' => array($fileId)), $settings);
+			$this->assertCount(1, $this->mailer->sent);
+			$this->assertSame(array('friend@example.test'), $this->mailer->sent[0]['to']);
+			$this->assertSame('Report', $this->mailer->sent[0]['subject']);
+		} finally {
+			unlink($root . '/report.txt');
+			rmdir($root);
+		}
+	}
 }

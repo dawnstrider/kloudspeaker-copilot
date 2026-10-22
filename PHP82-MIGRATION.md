@@ -57,11 +57,16 @@ The checklist describes tested components, not whole-application certification.
   `ResultSet::values()` returns NULL for no rows (adapter contract, unchanged), so
   its callers (SessionDao, ItemCollectionDao, update 1_8_5) now fall back to an
   empty array: `count(null)` was a TypeError that broke every UNAUTHORIZED response.
-- Added backend/test/PluginTest.php: all bundled plugins register, LostPassword
-  reset/hint/rejection flows and Registration create/confirm/authenticate flows
-  run under E_ALL with a capture mailer. Default suite: 132 tests, 771 assertions.
-- Plugin item 1 is still open for Share, Notificator, ItemCollection, SendViaEmail,
-  Comment, TrashBin and editing flows.
+- Added backend/test/PluginTest.php (capture mailer, authenticated sessions via
+  session id): all bundled plugins register; LostPassword, Registration (incl.
+  admin approval/denial), Share (create/edit/list/public info/delete), Notificator
+  (admin services and event delivery), ItemCollection and SendViaEmail flows run
+  under E_ALL. Default suite: 138 tests, 831 assertions.
+- Plugin item 1 is still open for Comment, TrashBin, ItemDetails,
+  FileViewerEditor, EventLogging, Archiver/Watermarking service paths over
+  sessions, and Share public download/upload/key paths.
+- Pre-existing (PHP 7 too), fixed: three bare `invalidRequestException()` calls in
+  FilesystemServices (fatal undefined function instead of INVALID_REQUEST).
 - Pre-existing (PHP 7 too), not fixed: an unauthenticated permission check builds
   `user_id in (0,)` because the session user id is NULL, so
   `PermissionsDao::getEffectiveGenericPermissions` fails with a SQL error
