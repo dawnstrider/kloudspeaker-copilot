@@ -184,4 +184,83 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$this->assertSame(substr($payload, 10, 10), $ranged['body']);
 		$this->assertSame(1, $count());
 	}
+
+	private function cookies(array $response): array {
+		$cookies = array();
+		foreach ($response['headers'] as $header) {
+			if (stripos($header, 'Set-Cookie:') === 0) {
+				$pair = explode(';', trim(substr($header, 11)), 2);
+				list($name, $value) = explode('=', $pair[0], 2);
+				$cookies[$name] = array('value' => urldecode($value), 'attributes' => $pair[1] ?? '');
+			}
+		}
+		return $cookies;
+	}
+
+	private function authenticated(array $headers = array(), string $query = ''): bool {
+		$response = $this->http('GET', 'session/info' . $query, $headers);
+		$this->assertSame(200, $response['status'], $response['body']);
+		return json_decode($response['body'], TRUE)['result']['authenticated'];
+	}
+
+	public function testSessionAndRememberMeCookiesAuthenticateAndAreClearedOnLogout(): void {
+		$pdo = $this->startServer(array('plugins' => array()));
+		$this->createUser($pdo, 1, 'cookieuser', 'cookie-pw');
+		$credentials = array('username' => 'cookieuser', 'password' => base64_encode('cookie-pw'), 'remember' => '1');
+		$login = $this->json('POST', 'session/authenticate', $credentials);
+		$this->assertSame(200, $login['status'], $login['body']);
+		$sessionId = $login['json']['result']['session_id'];
+		$cookies = $this->cookies($login);
+		$this->assertSame($sessionId, $cookies['kloudspeaker_app_session']['value']);
+		$this->assertArrayHasKey('kloudspeaker_app_login', $cookies);
+		$this->assertStringContainsString('path=/', $cookies['kloudspeaker_app_session']['attributes']);
+
+		$this->assertFalse($this->authenticated());
+		$this->assertTrue($this->authenticated(array('Cookie: kloudspeaker_app_session=' . $sessionId)));
+		$this->assertFalse($this->authenticated(array('Cookie: kloudspeaker_app_session=unknown-session')));
+
+		$loginCookie = $cookies['kloudspeaker_app_login']['value'];
+		$this->assertTrue($this->authenticated(array('Cookie: kloudspeaker_app_login=' . urlencode($loginCookie))));
+		$tampered = substr($loginCookie, 0, -1) . (substr($loginCookie, -1) === 'a' ? 'b' : 'a');
+		$this->assertFalse($this->authenticated(array('Cookie: kloudspeaker_app_login=' . urlencode($tampered))));
+		$this->assertFalse($this->authenticated(array('Cookie: kloudspeaker_app_login=garbage')));
+
+		$logout = $this->json('POST', 'session/logout', array(), $sessionId);
+		$this->assertSame(200, $logout['status'], $logout['body']);
+		$this->assertFalse($this->authenticated(array('Cookie: kloudspeaker_app_session=' . $sessionId)));
+		$this->assertFalse($this->authenticated(array(), '?session=' . $sessionId));
+	}
+
+	public function testInterruptedUploadsAndDownloadsLeaveNoPartialFileAndTheServerKeepsWorking(): void {
+		list($session, $folderId, $root) = $this->startWithFolder();
+		$payload = $this->binaryPayload(3 * 1024 * 1024);
+
+		// upload: promise 3 MiB, send 1000 bytes, then drop the connection
+		$socket = fsockopen('127.0.0.1', $this->port, $errno, $errstr, 5);
+		$this->assertNotFalse($socket);
+		fwrite($socket, "POST /r.php/filesystem/$folderId/files?format=binary&session=$session HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Disposition: attachment; filename=\"partial.bin\"\r\nContent-Type: application/octet-stream\r\nContent-Length: " . strlen($payload) . "\r\nConnection: close\r\n\r\n" . substr($payload, 0, 1000));
+		fclose($socket);
+		usleep(300000);
+		$this->assertSame(array(), array_values(array_diff(scandir($root), array('.', '..'))), 'an aborted upload must not leave a file behind');
+
+		// the server still serves a complete upload and download afterwards
+		$ok = $this->http('POST', 'filesystem/' . $folderId . '/files?format=binary&session=' . $session, array('Content-Disposition: attachment; filename="whole.bin"'), $payload);
+		$this->assertSame(200, $ok['status'], $ok['body']);
+		$fileId = $this->listFiles($folderId, $session)[0]['id'];
+
+		// download: read the headers and 1000 body bytes, then drop the connection
+		$socket = fsockopen('127.0.0.1', $this->port, $errno, $errstr, 5);
+		fwrite($socket, "GET /r.php/filesystem/$fileId?session=$session HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+		$received = '';
+		while (strlen($received) < 3000 && !feof($socket)) {
+			$received .= fread($socket, 4096);
+		}
+		fclose($socket);
+		$this->assertStringContainsString('200 OK', $received);
+
+		$again = $this->http('GET', 'filesystem/' . $fileId . '?session=' . $session);
+		$this->assertSame(md5($payload), md5($again['body']));
+		$this->assertSame(md5($payload), md5_file($root . '/whole.bin'));
+		$this->assertSame(array('whole.bin'), array_values(array_diff(scandir($root), array('.', '..'))));
+	}
 }

@@ -99,7 +99,7 @@ The checklist describes tested components, not whole-application certification.
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 157 tests, 997 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 159 tests, 1026 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
   `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
@@ -111,6 +111,15 @@ The checklist describes tested components, not whole-application certification.
   can be retried. Still open: MySQL/PostgreSQL upgrade rehearsal (PostgreSQL has
   no update scripts and its params.sql records `2_0`), plugin upgrade paths, and
   rollback of a failed upgrade on a real file database copy.
+- Item 4 progress (HttpTest.php): session cookie and remember-me login cookie
+  authenticate without a `session` parameter, unknown/tampered cookies are
+  rejected, and logout invalidates the session; an upload dropped mid-body leaves
+  no file, an abandoned download leaves the server healthy, and the next complete
+  upload/download is byte-exact. These run on PHP's built-in server only: Apache
+  or nginx with PHP-FPM, `php.ini`/web-SAPI settings (upload limits, output
+  buffering, `session.*`), HTTPS and cookie attributes (the app sets no
+  `HttpOnly`/`Secure`/`SameSite`, which is unchanged behavior) and browser flows
+  are still unverified.
 - Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
   backend/test/phpunit.database.xml) installs the full schema plus every bundled
   plugin's tables into a prefixed set of tables, logs the new admin in through the
@@ -134,11 +143,11 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 157 tests, 997 assertions (includes plugin, installer/updater and real-HTTP tests) |
+| Default PHPUnit suite | 159 tests, 1026 assertions (includes plugin, installer/updater and real-HTTP tests) |
 | MySQL integration (MariaDB 11.4.13) | 16 tests, 101 assertions (adapter contracts plus full-schema install and 2_6_7 to 2_7_28 upgrade) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| Total | 190 tests, 1273 assertions |
+| Total | 192 tests, 1302 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 
