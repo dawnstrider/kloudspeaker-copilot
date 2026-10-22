@@ -291,4 +291,88 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 		$this->processRequest('DELETE', 'notificator/list/' . $id, array(), NULL, $settings);
 		$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM notificator_notification')->fetchColumn());
 	}
+
+	public function testNotificatorDeliversMatchingEventsToRecipients(): void {
+		$this->mailer = new Kloudspeaker_CaptureMailer();
+		$settings = $this->notificatorSettings();
+		$settings['enable_mail_notification'] = TRUE;
+		$this->createUser(50, 'actor', 'actor@example.test', 'actor-pw');
+		$this->createUser(51, 'recipient', 'recipient@example.test', 'recipient-pw');
+		$db = $this->getConnection();
+		$db->exec("INSERT INTO notificator_notification (id, name, message_title, message) VALUES (1, 'logins', 'Login by %username%', 'User %username% logged in')");
+		$db->exec("INSERT INTO notificator_notification_event (id, notification_id, event_type) VALUES (1, 1, 'session/login')");
+		$db->exec("INSERT INTO notificator_notification_recipient (notification_id, user_id) VALUES (1, 51)");
+		$db->exec("INSERT INTO notificator_notification (id, name, message_title, message) VALUES (2, 'failures', 'Failed login', 'Failed login for %user%')");
+		$db->exec("INSERT INTO notificator_notification_event (id, notification_id, event_type) VALUES (2, 2, 'session/failed_login')");
+		$db->exec("INSERT INTO notificator_notification_recipient (notification_id, user_id) VALUES (2, 51)");
+
+		$this->login('actor', 'actor-pw', $settings);
+		$this->assertCount(1, $this->mailer->sent);
+		$this->assertSame('recipient@example.test', $this->mailer->sent[0]['to'][0]['email']);
+		$this->assertSame('Login by actor', $this->mailer->sent[0]['subject']);
+		$this->assertSame('User actor logged in', $this->mailer->sent[0]['message']);
+
+		$this->sessionId = NULL;
+		try {
+			$this->processRequest('POST', 'session/authenticate', array(), array('username' => 'actor', 'password' => base64_encode('wrong')), $settings);
+			$this->fail('A wrong password must be rejected');
+		} catch (ServiceException $e) {
+			$this->assertSame('AUTHENTICATION_FAILED', $e->type());
+		}
+		$this->assertCount(2, $this->mailer->sent);
+		$this->assertSame('Failed login for actor', $this->mailer->sent[1]['message']);
+	}
+
+	public function testItemCollectionLifecycle(): void {
+		$this->getConnection()->exec(file_get_contents(__DIR__ . '/../plugin/ItemCollection/sqlite/install.sql'));
+		$settings = array('plugins' => array('ItemCollection' => array()), 'host_public_address' => 'http://kloudspeaker.test');
+		$roots = array();
+		try {
+			foreach (array(1, 2) as $folderId) {
+				$roots[$folderId] = sys_get_temp_dir() . '/kloudspeaker-ic-' . $folderId . '-' . bin2hex(random_bytes(4));
+				mkdir($roots[$folderId]);
+				$this->getConnection()->exec("INSERT INTO folder (id, name, path, type) VALUES ($folderId, 'Root$folderId', '" . $roots[$folderId] . "', 'local')");
+				$this->getConnection()->exec("INSERT INTO user_folder (user_id, folder_id, name) VALUES (60, $folderId, NULL)");
+			}
+			$this->createUser(60, 'collector', 'collector@example.test', 'collector-pw');
+			$this->login('collector', 'collector-pw', $settings);
+			$folders = $this->processRequest('GET', 'session/info', array(), NULL, $settings)['folders'];
+			$this->assertCount(2, $folders);
+			$first = $folders[0]['id'];
+			$second = $folders[1]['id'];
+
+			foreach (array(array('name' => 'x'), array('name' => '', 'items' => array())) as $bad) {
+				try {
+					$this->processRequest('POST', 'itemcollections', array(), $bad, $settings);
+					$this->fail('Malformed collections must be rejected');
+				} catch (ServiceException $e) {
+					$this->assertSame('INVALID_REQUEST', $e->type());
+				}
+			}
+
+			$created = $this->processRequest('POST', 'itemcollections', array(), array('name' => 'favourites', 'items' => array(array('id' => $first))), $settings);
+			$this->assertCount(1, $created);
+			$id = $created[0]['id'];
+			$this->assertSame('favourites', $created[0]['name']);
+			$this->assertCount(1, $created[0]['items']);
+
+			$this->processRequest('POST', 'itemcollections/' . $id, array(), array('items' => array(array('id' => $second), array('id' => $first))), $settings);
+			$collection = $this->processRequest('GET', 'itemcollections/' . $id, array(), NULL, $settings);
+			$this->assertCount(2, $collection['items']);
+
+			$data = $this->processRequest('POST', 'itemcollections/' . $id . '/data', array(), array('rq_data' => array()), $settings);
+			$this->assertSame($id, $data['ic']['id']);
+
+			$this->processRequest('DELETE', 'itemcollections/' . $id . '/items', array(), array('items' => array(array('id' => $second))), $settings);
+			$this->assertCount(1, $this->processRequest('GET', 'itemcollections/' . $id, array(), NULL, $settings)['items']);
+
+			$remaining = $this->processRequest('DELETE', 'itemcollections/' . $id, array(), NULL, $settings);
+			$this->assertSame(array(), $remaining);
+			$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM itemcollection_item')->fetchColumn());
+		} finally {
+			foreach ($roots as $root) {
+				rmdir($root);
+			}
+		}
+	}
 }
