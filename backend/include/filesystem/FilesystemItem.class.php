@@ -11,6 +11,8 @@
 
 abstract class FilesystemItem {
 	protected $id;
+	protected $rootId;
+	protected $name;
 	protected $path;
 	protected $filesystem;
 

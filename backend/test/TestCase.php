@@ -11,6 +11,7 @@ abstract class Kloudspeaker_TestCase extends TestCase {
 	private $pdo;
     protected $responseHandler = null;
     protected $mailer = null;
+    protected $sessionId = null;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -71,7 +72,7 @@ abstract class Kloudspeaker_TestCase extends TestCase {
 	    	$property->setValue($b->env(), $this->mailer);
 	    }
 	    $parts = strlen($url) > 0 ? explode("/", $url) : array();
-	    $r = new Request(NULL, strtolower($method), $url, "test-ip", $parts, $params, $data);
+	    $r = new Request($this->sessionId, strtolower($method), $url, "test-ip", $parts, $params, $data);
 	    $b->processRequest($r);
 	    
 	    return $this->responseHandler->lastSuccess;

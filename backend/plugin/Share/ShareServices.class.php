@@ -236,11 +236,12 @@ class ShareServices extends ServicesBase {
 		}
 
 		$itemId = $data["item"];
-		if ($data["expiration"] and !is_numeric($data["expiration"])) {
+		$expiration = isset($data["expiration"]) ? $data["expiration"] : NULL;
+		if ($expiration and !is_numeric($expiration)) {
 			throw $this->invalidRequestException("Invalid datatype: expiration");
 		}
 
-		$this->handler()->addShare($itemId, $data["name"], $data["type"], $data["expiration"], isset($data["active"]) ? $data["active"] : TRUE, $data["restriction"]);
+		$this->handler()->addShare($itemId, $data["name"], isset($data["type"]) ? $data["type"] : NULL, $expiration, isset($data["active"]) ? $data["active"] : TRUE, isset($data["restriction"]) ? $data["restriction"] : NULL);
 		$this->response()->success($this->handler()->getShares($itemId));
 	}
 
@@ -271,11 +272,12 @@ class ShareServices extends ServicesBase {
 			throw $this->invalidRequestException("No data");
 		}
 
-		if ($data["expiration"] and !is_numeric($data["expiration"])) {
-			throw $this->invalidRequestException("Invalid datatype: expiration " . $data["expiration"]);
+		$expiration = isset($data["expiration"]) ? $data["expiration"] : NULL;
+		if ($expiration and !is_numeric($expiration)) {
+			throw $this->invalidRequestException("Invalid datatype: expiration " . $expiration);
 		}
 
-		$this->handler()->editShare($id, $data["name"], $data["type"], $data["expiration"], isset($data["active"]) ? $data["active"] : TRUE, $data["restriction"]);
+		$this->handler()->editShare($id, $data["name"], isset($data["type"]) ? $data["type"] : NULL, $expiration, isset($data["active"]) ? $data["active"] : TRUE, isset($data["restriction"]) ? $data["restriction"] : NULL);
 		$this->response()->success(array());
 	}
 

@@ -51,7 +51,9 @@ The checklist describes tested components, not whole-application certification.
 - Declared undeclared properties in the installers (`dbUtil`, `passwordHash`),
   `RegistrationEvent::$email` and `TrashBin::$trashBinManager`; removed the
   `srand()` float call in LostPassword; cast a null `user_type` in
-  `Authentication::isAdmin()` (PHP 8.1 null-to-string deprecation).
+  `Authentication::isAdmin()` (PHP 8.1 null-to-string deprecation); declared
+  `FilesystemItem::$rootId`/`$name` (core, hit by every folder access); guarded
+  missing `expiration`/`type`/`restriction` reads in ShareServices create/edit.
 - Added backend/test/PluginTest.php: all bundled plugins register, LostPassword
   reset/hint/rejection flows and Registration create/confirm/authenticate flows
   run under E_ALL with a capture mailer. Default suite: 132 tests, 771 assertions.

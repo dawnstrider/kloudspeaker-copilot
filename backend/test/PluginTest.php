@@ -150,4 +150,82 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 		$this->assertSame(1, (int) $this->getConnection()->query('SELECT COUNT(*) FROM registration')->fetchColumn());
 		$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM user')->fetchColumn());
 	}
+
+	private function login(string $name, string $password, array $settings): void {
+		$this->sessionId = NULL;
+		$session = $this->processRequest('POST', 'session/authenticate', array(), array('username' => $name, 'password' => base64_encode($password)), $settings);
+		$this->assertTrue($session['authenticated']);
+		$this->sessionId = $session['session_id'];
+	}
+
+	public function testRegistrationManagementIsDeniedToOrdinaryUsersAndAllowedToAdmins(): void {
+		$this->mailer = new Kloudspeaker_CaptureMailer();
+		$settings = $this->registrationSettings();
+		$this->processRequest('POST', 'registration/create', array(), $this->registrationData(), $settings);
+		$this->createUser(20, 'ordinary', 'ordinary@example.test', 'ordinary-pw');
+		$this->getConnection()->exec("UPDATE user SET user_type = NULL WHERE id = 20");
+		$this->createUser(21, 'admin', 'admin@example.test', 'admin-pw');
+		$this->login('ordinary', 'ordinary-pw', $settings);
+		foreach (array(array('GET', 'registration/list'), array('GET', 'registration/approve/1'), array('POST', 'registration/approve/1')) as $call) {
+			try {
+				$this->processRequest($call[0], $call[1], array(), array(), $settings);
+				$this->fail('Ordinary users must not manage registrations: ' . $call[1]);
+			} catch (ServiceException $e) {
+				$this->assertSame('INSUFFICIENT_PERMISSIONS', $e->type(), $call[1]);
+			}
+		}
+		$this->assertSame(1, (int) $this->getConnection()->query('SELECT COUNT(*) FROM registration')->fetchColumn());
+
+		$this->login('admin', 'admin-pw', $settings);
+		$list = $this->processRequest('GET', 'registration/list', array(), NULL, $settings);
+		$this->assertCount(1, $list);
+		$this->assertSame('newuser', $list[0]['name']);
+		$approved = $this->processRequest('POST', 'registration/approve/' . $list[0]['id'], array(), array(), $settings);
+		$this->assertSame('newuser', $approved['name']);
+		$this->assertSame(1, (int) $this->getConnection()->query("SELECT COUNT(*) FROM user WHERE name = 'newuser'")->fetchColumn());
+		$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM registration')->fetchColumn());
+	}
+
+	private function shareSettings(): array {
+		$this->getConnection()->exec(file_get_contents(__DIR__ . '/../plugin/Share/sqlite/install.sql'));
+		return array(
+			'plugins' => array('Share' => array()),
+			'host_public_address' => 'http://kloudspeaker.test'
+		);
+	}
+
+	public function testShareCreationWithOptionalFieldsOmitted(): void {
+		$settings = $this->shareSettings();
+		$root = sys_get_temp_dir() . '/kloudspeaker-share-' . bin2hex(random_bytes(4));
+		mkdir($root);
+		file_put_contents($root . '/shared.txt', 'payload');
+		try {
+			$this->getConnection()->exec("INSERT INTO folder (id, name, path, type) VALUES (1, 'Root', '" . $root . "', 'local')");
+			$this->createUser(30, 'sharer', 'sharer@example.test', 'sharer-pw');
+			$this->getConnection()->exec("INSERT INTO user_folder (user_id, folder_id, name) VALUES (30, 1, NULL)");
+			$this->login('sharer', 'sharer-pw', $settings);
+			$session = $this->processRequest('GET', 'session/info', array(), NULL, $settings);
+			$this->assertNotEmpty($session['folders']);
+			$itemId = $session['folders'][0]['id'];
+			$shares = $this->processRequest('POST', 'share', array(), array('item' => $itemId, 'name' => 'fixture share', 'type' => 'upload'), $settings);
+			$this->assertCount(1, $shares);
+			$shareId = $shares[0]['id'];
+			$this->assertSame('fixture share', $shares[0]['name']);
+
+			$this->processRequest('PUT', 'share/' . $shareId, array(), array('name' => 'renamed share', 'type' => 'upload'), $settings);
+			$listed = $this->processRequest('GET', 'share/items/' . $itemId, array(), NULL, $settings);
+			$this->assertSame('renamed share', $listed['shares'][0]['name']);
+
+			$this->sessionId = NULL;
+			$info = $this->processRequest('GET', 'public/' . $shareId . '/info', array(), NULL, $settings);
+			$this->assertIsArray($info);
+
+			$this->login('sharer', 'sharer-pw', $settings);
+			$this->processRequest('DELETE', 'share/' . $shareId, array(), NULL, $settings);
+			$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM share')->fetchColumn());
+		} finally {
+			unlink($root . '/shared.txt');
+			rmdir($root);
+		}
+	}
 }
