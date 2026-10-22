@@ -452,6 +452,18 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$this->assertSame('pw', $user['json']['result']['auth']);
 	}
 
+	/** Accounts without an explicit auth type use the default method; existing installations store them all that way. */
+	public function testSessionOfAnAccountWithoutAuthTypeSurvivesTheNextRequest(): void {
+		$pdo = $this->startServer(array('plugins' => array()));
+		$this->createUser($pdo, 1, 'legacy', 'legacy-pw');
+		$pdo->exec('UPDATE user_auth SET type = NULL WHERE user_id = 1');
+		$session = $this->login('legacy', 'legacy-pw');
+		$info = $this->json('GET', 'session/info', NULL, $session);
+		$this->assertSame(200, $info['status'], $info['body']);
+		$this->assertTrue($info['json']['result']['authenticated']);
+		$this->assertSame('legacy', $info['json']['result']['username']);
+	}
+
 	/**
 	 * Names are UTF-8 for clients. On disk they are exactly the same bytes unless convert_filenames is enabled
 	 * (the default is off), in which case the disk uses ISO-8859-1.

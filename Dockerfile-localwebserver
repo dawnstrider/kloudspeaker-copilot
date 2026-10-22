@@ -1,0 +1,82 @@
+FROM php:8.2.35-apache
+RUN apt-get update && apt-get install -y --no-install-recommends libfreetype6-dev libjpeg62-turbo-dev libpng-dev libzip-dev \
+ && docker-php-ext-configure gd --with-freetype --with-jpeg \
+ && docker-php-ext-install mysqli pdo_mysql gd zip \
+ && rm -rf /var/lib/apt/lists/*
+
+# The folders registered in the imported database (kloudspeaker_folder, dump line 75). The application
+# looks for them at exactly these paths (converted to ISO-8859-1), so they are created empty here;
+# copy or mount the real files into them. 63 folders.
+
+# The folders registered in the imported database (kloudspeaker_folder, dump line 75). The application
+# looks for them at exactly these paths (converted to ISO-8859-1), so they are created empty here;
+# copy or mount the real files into them. 63 folders.
+
+# The folders registered in the imported database (kloudspeaker_folder, dump line 75). The application
+# looks for them at exactly these paths (UTF-8, as convert_filenames is off by default), so they are created empty here;
+# copy or mount the real files into them. 63 folders.
+RUN mkdir -p \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/FordDeutschland' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/MicroTechnology' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/accumotive' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/ams' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/apl' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/aramco' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/atos' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/audi' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/audieinkauf' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/beta-cae' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bmw' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch-ci' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch-cz' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch-linz' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch-mahle' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch-plcd' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/bosch-tird' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/canoo' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/cartago' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/ceres' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/cummins' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/czechTU' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/dacore' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/daimler-hv' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/daimler/dacar' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/dassault' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/emerson' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/ford' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/fordccl' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/gigatronik' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/gmbh' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/hbm' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/highqsoft' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/hofmann' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/honda-ohio' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/horiba' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/iasys' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/iavf' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/imctm' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/iveco' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/karakun' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/koch' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/kristl_seibt' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/lenk' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/mbtech' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/ni' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/pragmaticminds' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/public/Public' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/public/Restricted' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/rac' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/schaeffler' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/siemens' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/steuerberatung' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/tata' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/tenergy' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/tuev-sued' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/vertec' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/wartsila' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/whitepine' \
+    '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/windhill' \
+    "$(printf '/var/www/vhosts/highqsoft.de/download.highqsoft.de/data/\303\226BB')" \
+ && chown -R www-data:www-data /var/www/vhosts

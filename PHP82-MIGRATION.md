@@ -179,6 +179,20 @@ Status as of 2026-10-22 (details in the progress notes below):
   (`trim()` default characters, `imagedestroy()`/`curl_close()` deprecations); they are
   outside the 8.2 target. The scan is syntax/function-level only: semantic changes
   (comparisons, sorting, numeric strings) are covered by runtime tests, not by it.
+- Login sessions of accounts without an auth type (all 197 live accounts: `user_auth.type`
+  is NULL, meaning the default method) failed on the request after login (a browser
+  refresh) with HTTP 500: `Authentication::check()` passed the stored NULL to
+  `strcasecmp()`. Fixed with a string cast (the PHP 7 result) and an HTTP test; the
+  test helpers had always created users with type `pw`.
+- Client: error dialogs shown during startup displayed raw text keys
+  (`!null:errorDialogTitle`) because the client loaded its texts only after a successful
+  `session/info`. The client now loads the default language before that request and
+  still switches to the user's language on session start. The repository ships only the
+  built bundles; the source is upstream (github.com/sjarvela/kloudspeaker,
+  js/kloudspeaker/app.js, `app.init`), and the same change was applied by hand to
+  js/kloudspeaker.js and js/kloudspeaker.min.js. Checked in Chrome against the
+  local stack: forced `session/info` failure shows "Request failed" (before: raw keys),
+  normal startup shows the translated login view without script errors.
 - Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
   backend/test/phpunit.database.xml) installs the full schema plus every bundled
   plugin's tables into a prefixed set of tables, logs the new admin in through the
@@ -217,12 +231,12 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 170 tests, 1108 assertions, 2 Apache-only tests skipped (includes plugin, installer/updater and real-HTTP tests) |
+| Default PHPUnit suite | 171 tests, 1112 assertions, 2 Apache-only tests skipped (includes plugin, installer/updater and real-HTTP tests) |
 | MySQL integration (MariaDB 11.4.13) | 20 tests, 140 assertions (adapter contracts, full-schema install, 2_6_7 to 2_7_28 upgrade, plugin upgrades) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| HTTP workflows on Apache 2.4 + mod_php (web profile) | 17 tests, 170 assertions |
-| Total | 224 tests, 1593 assertions |
+| HTTP workflows on Apache 2.4 + mod_php (web profile) | 18 tests, 174 assertions |
+| Total | 226 tests, 1601 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 

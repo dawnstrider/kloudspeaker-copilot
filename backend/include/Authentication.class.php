@@ -30,7 +30,7 @@ class Authentication {
 
 	public function check() {
 		if ($this->isAuthenticated()) {
-			if (!$this->env->session()->hasParam('auth') or strcasecmp("remote", $this->env->session()->param('auth')) != 0) {
+			if (!$this->env->session()->hasParam('auth') or strcasecmp("remote", (string) $this->env->session()->param('auth')) != 0) {
 				return;
 			}
 

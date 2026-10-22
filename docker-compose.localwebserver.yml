@@ -1,0 +1,59 @@
+# Local development stack: the PHP 8.2 web server image (Dockerfile-localwebserver) plus MariaDB.
+#
+#   $env:KLOUD_DB_PASSWORD = "<the password in backend/configuration.php>"
+#   docker compose -f docker-compose.localwebserver.yml up -d --build
+#
+# In backend/configuration.php set  "host" => "db"  (not "localhost": inside the web container that is the
+# container itself). The user ("kloud") and database ("kloudspeaker") match the values already used there.
+# On first start open http://localhost:81/backend/install/ to create the schema and the administrator.
+# Stop an older container that already uses port 81, or set WEB_PORT to another port.
+#
+# The password is read from the environment so it never lives in this file.
+#
+# To load the live-instance dump (dump-kloudspeaker-202610201649.sql) the database volume must be empty:
+#   docker compose -f docker-compose.localwebserver.yml down -v     # deletes the local database volume!
+#   docker compose -f docker-compose.localwebserver.yml up -d --build
+# Skip the installer in that case: the dump already contains the schema (2_7_28) and the users.
+
+name: kloudspeaker-local
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile-localwebserver
+    image: kloudspeaker-webserver
+    ports:
+      - "${WEB_PORT:-81}:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11.4@sha256:250e1609e93c0e6aecf64bfbab2d84d5e89d2481540fe77447ff6c855c3b1873
+    environment:
+      MARIADB_DATABASE: kloudspeaker
+      MARIADB_USER: kloud
+      MARIADB_PASSWORD: ${KLOUD_DB_PASSWORD:?set KLOUD_DB_PASSWORD to the database password from backend/configuration.php}
+      MARIADB_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - kloudspeaker-db:/var/lib/mysql
+      # Imported automatically, but only into an EMPTY database volume (first start). It is a copy of live data
+      # and is ignored by git (.gitignore: dump-*.sql). Remove this mount if the file is not present.
+      - type: bind
+        source: ./dump-kloudspeaker-202610201649.sql
+        target: /docker-entrypoint-initdb.d/10-dump.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: [CMD, healthcheck.sh, --connect, --innodb_initialized]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+volumes:
+  kloudspeaker-db:
