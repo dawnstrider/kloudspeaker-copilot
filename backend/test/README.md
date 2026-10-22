@@ -241,3 +241,16 @@ path, so the same test configuration is used as with the built-in server. Settin
 each test are written to `current/settings.json` on the shared volume. Two tests only
 run here: the shipped htaccess under Apache 2.4 and the `X-Forwarded-For` handling.
 Run `down -v` afterwards to drop the volume.
+
+## Static PHP 8.2 Compatibility Scan
+
+Not part of the default run (it needs network access to install the tool). Install
+PHPCompatibility next to, not inside, the project and scan with the target pinned to
+exactly 8.2 (an open-ended range also reports PHP 8.5/8.6 changes):
+
+```powershell
+docker run --rm -v ${PWD}/.tools/phpcs:/tools -w /tools composer:2.8.12 sh -c "composer init -n --name local/phpcs -q; composer config minimum-stability dev; composer config prefer-stable true; composer config --no-plugins allow-plugins.dealerdirect/phpcodesniffer-composer-installer true; composer require --dev -n squizlabs/php_codesniffer phpcompatibility/php-compatibility:dev-develop dealerdirect/phpcodesniffer-composer-installer"
+docker run --rm -v ${PWD}/.tools/phpcs:/tools -v ${PWD}:/work:ro -w /work php:8.2.35-cli-alpine php -d memory_limit=1G /tools/vendor/bin/phpcs --standard=PHPCompatibility --runtime-set testVersion 8.2 --extensions=php --ignore='*/backend/vendor/*,*/backend/test/*,*/tools/*' --report=summary backend
+```
+
+The expected remaining findings are listed in PHP82-MIGRATION.md.

@@ -107,7 +107,7 @@ Status as of 2026-10-22 (details in the progress notes below):
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 167 tests (2 skipped), 1076 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 170 tests (2 skipped), 1108 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
   `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
@@ -152,6 +152,33 @@ Status as of 2026-10-22 (details in the progress notes below):
 - Observation, not changed: archives written into a managed folder are created mode
   0600 (temporary file then rename), so other accounts (backups, shares) cannot read
   them until their permissions are adjusted.
+- Live-data check (a copy of the production database, imported into a throwaway
+  MariaDB, never the real system): all 197 stored password hashes are bcrypt
+  `$2a$08$` (60 characters, 23-character salts), the format the code verifies and
+  tests; a scripted admin session then made 985 API calls under the production error
+  handler (all 260 users' details/folders/permissions, 62 groups, settings, event log
+  queries over 42,549 rows, pending registrations, all 63 root folders): 0 failures
+  after one fix. Fixed: `GET configuration/users/<id>` read `getUserAuth()['type']` for
+  groups, which have no login record (HTTP 500). Logging in with live accounts was
+  not tried (no credentials), and mail sending was not exercised.
+- File names: `convert_filenames` is **off by default**, so names are used on disk exactly
+  as stored (UTF-8). With it on, disk names are ISO-8859-1. HttpTest covers both
+  (listing, download, upload, folder creation, archive entries) on the built-in server
+  and Apache. Findings: (a) with the default, a file whose on-disk name is not valid
+  UTF-8 makes its whole folder unlistable (the item-id insert is rejected by the UTF-8
+  database column; HTTP 403 with an empty body) - before cutover check the live data
+  folders, e.g. `find <data> -print0 | iconv -f utf-8 -t utf-8 >/dev/null` or
+  `convmv -r -f utf-8 -t utf-8 <data>`; (b) with `convert_filenames` on, the folder
+  part of an archive entry comes out double-encoded (known, not fixed; the option is
+  not used by the shipped configuration).
+- Static scan: PHPCompatibility (`dev-develop`, `testVersion 8.2`, backend without
+  vendor/tests) reports only the SQLite2 adapter (45 `sqlite_*` errors, dead code: the
+  factory rejects that type), a false positive on the "0x0" image-size label in
+  ItemDetails, a `debug_backtrace()` argument note in r.php and mixed line endings in
+  ShareServices. Scanning with an open-ended range also flags PHP 8.5/8.6 changes
+  (`trim()` default characters, `imagedestroy()`/`curl_close()` deprecations); they are
+  outside the 8.2 target. The scan is syntax/function-level only: semantic changes
+  (comparisons, sorting, numeric strings) are covered by runtime tests, not by it.
 - Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
   backend/test/phpunit.database.xml) installs the full schema plus every bundled
   plugin's tables into a prefixed set of tables, logs the new admin in through the
@@ -190,12 +217,12 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 167 tests, 1076 assertions, 2 Apache-only tests skipped (includes plugin, installer/updater and real-HTTP tests) |
+| Default PHPUnit suite | 170 tests, 1108 assertions, 2 Apache-only tests skipped (includes plugin, installer/updater and real-HTTP tests) |
 | MySQL integration (MariaDB 11.4.13) | 20 tests, 140 assertions (adapter contracts, full-schema install, 2_6_7 to 2_7_28 upgrade, plugin upgrades) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| HTTP workflows on Apache 2.4 + mod_php (web profile) | 14 tests, 138 assertions |
-| Total | 218 tests, 1529 assertions |
+| HTTP workflows on Apache 2.4 + mod_php (web profile) | 17 tests, 170 assertions |
+| Total | 224 tests, 1593 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 

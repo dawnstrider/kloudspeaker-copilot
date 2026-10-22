@@ -439,4 +439,72 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$this->assertDoesNotMatchRegularExpression('/203\.0\.113\.9/', $addresses[0]);
 		$this->assertMatchesRegularExpression('/^203\.0\.113\.9 via \d+\.\d+\.\d+\.\d+$/', $addresses[1]);
 	}
+
+	public function testUserAndGroupDetailsRespondForGroupsThatHaveNoLoginRecord(): void {
+		list($session, $folderId, $root, $pdo) = $this->startWithFolder();
+		$pdo->exec("INSERT INTO user (id, name, email, is_group, user_type) VALUES (50, 'staff', NULL, 1, NULL)");
+		$group = $this->json('GET', 'configuration/users/50', NULL, $session);
+		$this->assertSame(200, $group['status'], $group['body']);
+		$this->assertSame('staff', $group['json']['result']['name']);
+		$this->assertNull($group['json']['result']['auth']);
+		$user = $this->json('GET', 'configuration/users/1', NULL, $session);
+		$this->assertSame(200, $user['status'], $user['body']);
+		$this->assertSame('pw', $user['json']['result']['auth']);
+	}
+
+	/**
+	 * Names are UTF-8 for clients. On disk they are exactly the same bytes unless convert_filenames is enabled
+	 * (the default is off), in which case the disk uses ISO-8859-1.
+	 */
+	private function nonAsciiNameRoundTrip(bool $convertFilenames): void {
+		$settings = array('plugins' => array('Archiver' => array()));
+		if ($convertFilenames) {
+			$settings['convert_filenames'] = TRUE;
+		}
+		list($session, $folderId, $root) = $this->startWithFolder($settings);
+		$utf8 = array('file' => "\xc3\x9cbersicht \xc3\xa4\xc3\xb6\xc3\x9f.txt", 'dir' => "Ge\xc3\xa4ndert", 'inner' => "na\xc3\xafve.txt", 'uploaded' => "Gr\xc3\xbc\xc3\x9fe.txt", 'created' => "\xc3\x84rger");
+		$onDisk = array_map(fn($name) => $convertFilenames ? mb_convert_encoding($name, 'ISO-8859-1', 'UTF-8') : $name, $utf8);
+
+		mkdir($root . '/' . $onDisk['dir']);
+		file_put_contents($root . '/' . $onDisk['file'], 'file content');
+		file_put_contents($root . '/' . $onDisk['dir'] . '/' . $onDisk['inner'], 'inside');
+
+		$raw = $this->json('GET', 'filesystem/' . $folderId . '/files', NULL, $session);
+		$this->assertSame(200, $raw['status'], $raw['body']);
+		$files = $raw['json']['result'];
+		$this->assertSame(array($utf8['file']), array_column($files, 'name'), 'clients always get UTF-8 names');
+		$this->assertSame('file content', $this->http('GET', 'filesystem/' . $files[0]['id'] . '?session=' . $session)['body']);
+		$folders = $this->json('GET', 'filesystem/' . $folderId . '/folders', NULL, $session)['json']['result'];
+		$this->assertSame(array($utf8['dir']), array_column($folders, 'name'));
+		$inner = $this->json('GET', 'filesystem/' . $folders[0]['id'] . '/files', NULL, $session)['json']['result'];
+		$this->assertSame(array($utf8['inner']), array_column($inner, 'name'));
+
+		$upload = $this->http('POST', 'filesystem/' . $folderId . '/files?format=binary&session=' . $session, array('Content-Disposition: attachment; filename="' . rawurlencode($utf8['uploaded']) . '"'), 'uploaded');
+		$this->assertSame(200, $upload['status'], $upload['body']);
+		$this->assertSame('uploaded', file_get_contents($root . '/' . $onDisk['uploaded']));
+
+		$created = $this->json('POST', 'filesystem/' . $folderId . '/folders', array('name' => $utf8['created']), $session);
+		$this->assertSame(200, $created['status'], $created['body']);
+		$this->assertDirectoryExists($root . '/' . $onDisk['created']);
+
+		$zip = $this->http('GET', 'archiver/download?item=' . $folders[0]['id'] . '&session=' . $session);
+		$entries = $this->zipEntries($zip['body']);
+		if (!$convertFilenames) {
+			$this->assertSame(array($utf8['dir'] . '/' . $utf8['inner'] => md5('inside')), $entries, 'archive entries carry UTF-8 names');
+		} else {
+			// known limitation (see PHP82-MIGRATION.md): with convert_filenames the folder part of an archive entry
+			// comes out double-encoded; the file name and content are right
+			$this->assertCount(1, $entries);
+			$this->assertStringEndsWith('/' . $utf8['inner'], (string) key($entries));
+			$this->assertSame(md5('inside'), current($entries));
+		}
+	}
+
+	public function testNonAsciiNamesAreUtf8OnDiskByDefault(): void {
+		$this->nonAsciiNameRoundTrip(FALSE);
+	}
+
+	public function testNonAsciiNamesAreIso88591OnDiskWhenFilenameConversionIsEnabled(): void {
+		$this->nonAsciiNameRoundTrip(TRUE);
+	}
 }

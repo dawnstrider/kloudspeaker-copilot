@@ -132,7 +132,7 @@ class ConfigurationServices extends ServicesBase {
 		if (count($this->path) == 2) {
 			$user = $this->env->configuration()->getUser($userId);
 			$auth = $this->env->configuration()->getUserAuth($userId);
-			$user["auth"] = $auth["type"];
+			$user["auth"] = $auth ? $auth["type"] : NULL;
 			$this->response()->success($user);
 			return;
 		}
