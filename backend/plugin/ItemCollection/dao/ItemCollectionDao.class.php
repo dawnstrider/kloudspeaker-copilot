@@ -80,7 +80,7 @@ class ItemCollectionDao {
 	}
 
 	private function addCollectionItemRows($db, $cid, $items) {
-		$itemIds = $db->query("select item_id from " . $db->table("itemcollection_item") . " where collection_id = " . $db->string($cid, TRUE))->values("item_id");
+		$itemIds = $db->query("select item_id from " . $db->table("itemcollection_item") . " where collection_id = " . $db->string($cid, TRUE))->values("item_id") ?: array();
 		if (count($itemIds) > 0) {
 			$maxInd = $db->query("select max(item_index) as max_ind from " . $db->table("itemcollection_item") . " where collection_id = " . $db->string($cid, TRUE))->value();
 		} else {
@@ -143,7 +143,7 @@ class ItemCollectionDao {
 	public function deleteUserItemCollections($userId) {
 		$db = $this->env->db();
 
-		$list = $db->query("select id from " . $db->table("itemcollection") . " where user_id = " . $db->string($userId, TRUE))->values("id");
+		$list = $db->query("select id from " . $db->table("itemcollection") . " where user_id = " . $db->string($userId, TRUE))->values("id") ?: array();
 		if (count($list) == 0) {
 			return $list;
 		}

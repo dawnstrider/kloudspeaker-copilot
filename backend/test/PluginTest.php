@@ -228,4 +228,67 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 			rmdir($root);
 		}
 	}
+
+	private function notificatorSettings(): array {
+		$this->getConnection()->exec(file_get_contents(__DIR__ . '/../plugin/Notificator/sqlite/install.sql'));
+		return array(
+			'plugins' => array('Notificator' => array()),
+			'host_public_address' => 'http://kloudspeaker.test'
+		);
+	}
+
+	public function testNotificatorAdminServicesManageNotifications(): void {
+		$settings = $this->notificatorSettings();
+		$this->createUser(40, 'notifadmin', 'notifadmin@example.test', 'notif-pw');
+		$this->createUser(41, 'watcher', 'watcher@example.test', 'watcher-pw');
+		$this->createUser(42, 'ordinary', 'ordinary@example.test', 'ordinary-pw');
+		$this->getConnection()->exec('UPDATE user SET user_type = NULL WHERE id = 42');
+
+		foreach (array(NULL, 'login') as $mode) {
+			if ($mode === 'login') {
+				$this->login('ordinary', 'ordinary-pw', $settings);
+			}
+			try {
+				$this->processRequest('GET', 'notificator/list', array(), NULL, $settings);
+				$this->fail('Only administrators may manage notifications');
+			} catch (ServiceException $e) {
+				$this->assertSame('UNAUTHORIZED', $e->type());
+			}
+		}
+
+		$this->login('notifadmin', 'notif-pw', $settings);
+		try {
+			$this->processRequest('POST', 'notificator/list', array(), array(), $settings);
+			$this->fail('A notification needs a name');
+		} catch (ServiceException $e) {
+			$this->assertSame('INVALID_REQUEST', $e->type());
+		}
+
+		$this->processRequest('POST', 'notificator/list', array(), array('name' => 'fixture notification'), $settings);
+		$list = $this->processRequest('GET', 'notificator/list', array(), NULL, $settings);
+		$this->assertCount(1, $list);
+		$id = $list[0]['id'];
+
+		$this->processRequest('PUT', 'notificator/list/' . $id, array(), array('name' => 'renamed'), $settings);
+		$this->processRequest('PUT', 'notificator/list/' . $id, array(), array('message_title' => 'title', 'message' => 'body'), $settings);
+		$this->processRequest('PUT', 'notificator/list/' . $id, array(), array('events' => array('filesystem/upload')), $settings);
+		$this->processRequest('PUT', 'notificator/list/' . $id, array(), array('users' => array(40)), $settings);
+		$this->processRequest('PUT', 'notificator/list/' . $id, array(), array('recipients' => array(41)), $settings);
+
+		$notification = $this->processRequest('GET', 'notificator/list/' . $id, array(), NULL, $settings);
+		$this->assertSame('renamed', $notification['name']);
+		$this->assertSame('body', $notification['message']);
+		$this->assertSame('filesystem/upload', $notification['events'][0]['type']);
+		$this->assertSame('notifadmin', $notification['users'][0]['name']);
+		$this->assertEquals(array(41), $notification['recipients']);
+
+		$eventId = $notification['events'][0]['id'];
+		$this->processRequest('PUT', 'notificator/list/' . $id . '/events/' . $eventId . '/filters', array(), array('new' => array(array('type' => 'name', 'value' => '*.txt'))), $settings);
+		$notification = $this->processRequest('GET', 'notificator/list/' . $id, array(), NULL, $settings);
+		$this->assertSame('*.txt', $notification['events'][0]['filters'][0]['value']);
+
+		$this->processRequest('DELETE', 'notificator/list/' . $id . '/recipients', array(), array('ids' => array(41)), $settings);
+		$this->processRequest('DELETE', 'notificator/list/' . $id, array(), NULL, $settings);
+		$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM notificator_notification')->fetchColumn());
+	}
 }

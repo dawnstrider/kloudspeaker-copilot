@@ -54,6 +54,9 @@ The checklist describes tested components, not whole-application certification.
   `Authentication::isAdmin()` (PHP 8.1 null-to-string deprecation); declared
   `FilesystemItem::$rootId`/`$name` (core, hit by every folder access); guarded
   missing `expiration`/`type`/`restriction` reads in ShareServices create/edit.
+  `ResultSet::values()` returns NULL for no rows (adapter contract, unchanged), so
+  its callers (SessionDao, ItemCollectionDao, update 1_8_5) now fall back to an
+  empty array: `count(null)` was a TypeError that broke every UNAUTHORIZED response.
 - Added backend/test/PluginTest.php: all bundled plugins register, LostPassword
   reset/hint/rejection flows and Registration create/confirm/authenticate flows
   run under E_ALL with a capture mailer. Default suite: 132 tests, 771 assertions.

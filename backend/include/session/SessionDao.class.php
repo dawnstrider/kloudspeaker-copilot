@@ -65,7 +65,7 @@ class SessionDao {
 
 	public function removeAllSessionBefore($time) {
 		$db = $this->env->db();
-		$ids = $db->query(sprintf("select id from " . $db->table("session") . " where last_access < %s", $db->string($time)))->values("id");
+		$ids = $db->query(sprintf("select id from " . $db->table("session") . " where last_access < %s", $db->string($time)))->values("id") ?: array();
 		if (count($ids) == 0) {
 			return;
 		}

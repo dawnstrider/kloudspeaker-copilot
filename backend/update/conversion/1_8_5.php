@@ -33,7 +33,7 @@
 			
 			$ids = array();
 			foreach ($tables as $t) {
-				$old = $db->query("select distinct item_id from ".$db->table($t))->values("item_id");
+				$old = $db->query("select distinct item_id from ".$db->table($t))->values("item_id") ?: array();
 				
 				foreach($old as $id)
 					if (!in_array($id, $ids)) $ids[$id] = $this->createId($id); 
