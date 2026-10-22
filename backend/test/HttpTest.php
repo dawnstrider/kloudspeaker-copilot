@@ -73,9 +73,16 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$partial = $this->http('GET', 'filesystem/' . $fileId . '?session=' . $session, array('Range: bytes=100-4195'));
 		$this->assertSame(206, $partial['status'], implode(' | ', $partial['headers']));
 		$this->assertContains('Content-Length: 4096', $partial['headers']);
-		// the body begins with the requested range (it is currently not cut off at its end; see PHP82-MIGRATION.md)
-		$this->assertSame(md5(substr($payload, 100, 4096)), md5(substr($partial['body'], 0, 4096)));
 		$this->assertContains('Content-Range: bytes 100-4195/' . strlen($payload), $partial['headers']);
+		$this->assertSame(4096, strlen($partial['body']));
+		$this->assertSame(md5(substr($payload, 100, 4096)), md5($partial['body']));
+
+		$tail = $this->http('GET', 'filesystem/' . $fileId . '?session=' . $session, array('Range: bytes=' . (strlen($payload) - 1000) . '-'));
+		$this->assertSame(206, $tail['status']);
+		$this->assertSame(md5(substr($payload, -1000)), md5($tail['body']));
+
+		$single = $this->http('GET', 'filesystem/' . $fileId . '?session=' . $session, array('Range: bytes=7-7'));
+		$this->assertSame($payload[7], $single['body']);
 
 		$second = $this->http('POST', 'filesystem/' . $folderId . '/files?format=binary&session=' . $session, array('Content-Disposition: attachment; filename="blob%20one.bin"'), 'second');
 		$this->assertSame(200, $second['status'], $second['body']);
@@ -157,5 +164,24 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 			$response = $this->http('POST', $path . '?session=' . $session, array('Content-Type: application/json'), '{"data":{}}');
 			$this->assertSame(200, $response['status'], $path . ' ' . $response['body']);
 		}
+	}
+
+	public function testPlainFileViewsAreLoggedAsEventsButRangedViewsAreNot(): void {
+		list($session, $folderId, $root) = $this->startWithFolder(array('plugins' => array('EventLogging' => array(), 'FileViewerEditor' => array())));
+		$payload = $this->binaryPayload(5000);
+		$this->http('POST', 'filesystem/' . $folderId . '/files?format=binary&session=' . $session, array('Content-Disposition: attachment; filename="seen.bin"'), $payload);
+		$fileId = $this->listFiles($folderId, $session)[0]['id'];
+		$count = fn() => $this->json('POST', 'eventlog/query', array('type' => 'filesystem/view'), $session)['json']['result']['total'];
+		$this->assertSame(0, $count());
+
+		$view = $this->http('GET', 'filesystem/' . $fileId . '/view?session=' . $session);
+		$this->assertSame(200, $view['status']);
+		$this->assertSame(md5($payload), md5($view['body']));
+		$this->assertSame(1, $count());
+
+		$ranged = $this->http('GET', 'view/' . $fileId . '/content?session=' . $session, array('Range: bytes=10-19'));
+		$this->assertSame(206, $ranged['status']);
+		$this->assertSame(substr($payload, 10, 10), $ranged['body']);
+		$this->assertSame(1, $count());
 	}
 }

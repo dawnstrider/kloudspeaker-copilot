@@ -176,6 +176,17 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 		}
 		$this->assertSame(1, (int) $this->getConnection()->query('SELECT COUNT(*) FROM registration')->fetchColumn());
 
+		// without any session the permission lookup has no user id and must still answer "denied"
+		$this->sessionId = NULL;
+		foreach (array(array('GET', 'registration/list'), array('GET', 'registration/approve/1'), array('POST', 'registration/approve/1')) as $call) {
+			try {
+				$this->processRequest($call[0], $call[1], array(), array(), $settings);
+				$this->fail('Anonymous users must not manage registrations: ' . $call[1]);
+			} catch (ServiceException $e) {
+				$this->assertSame('INSUFFICIENT_PERMISSIONS', $e->type(), $call[1]);
+			}
+		}
+
 		$this->login('admin', 'admin-pw', $settings);
 		$list = $this->processRequest('GET', 'registration/list', array(), NULL, $settings);
 		$this->assertCount(1, $list);

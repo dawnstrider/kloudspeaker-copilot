@@ -1276,8 +1276,8 @@ class FilesystemController {
 		$size = $file->size();
 		$range = $this->getDownloadRangeInfo($range, $size);
 
-		if ($range or ($range[0] ?? NULL) == 0) {
-			Logging::logDebug("View range " . ($range[0] ?? "") . "-" . ($range[1] ?? ""));
+		if ($range) {
+			Logging::logDebug("View range " . $range[0] . "-" . $range[1]);
 		} else {
 			$this->env->events()->onEvent(FileEvent::view($file));
 		}

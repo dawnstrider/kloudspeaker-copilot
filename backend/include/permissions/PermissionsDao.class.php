@@ -111,7 +111,10 @@ class Kloudspeaker_PermissionsDao {
 		$table = $this->db->table("permission");
 		$mysql = (strcmp("mysql", $this->db->type()) == 0);
 
-		$userIds = array(0, $userId);
+		$userIds = array(0);
+		if ($userId != NULL) {
+			$userIds[] = $userId;
+		}
 		if ($groupIds != NULL) {
 			foreach ($groupIds as $g) {
 				$userIds[] = $g;
@@ -194,7 +197,10 @@ class Kloudspeaker_PermissionsDao {
 		$mysql = (strcmp("mysql", $this->db->type()) == 0);
 		$table = $this->db->table("permission");
 
-		$userIds = array(0, $userId);
+		$userIds = array(0);
+		if ($userId != NULL) {
+			$userIds[] = $userId;
+		}
 		if ($groupIds != NULL) {
 			foreach ($groupIds as $g) {
 				$userIds[] = $g;

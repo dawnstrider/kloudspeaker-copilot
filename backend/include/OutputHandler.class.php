@@ -121,7 +121,7 @@
 				header('Accept-Ranges: bytes');
 				header('Content-Range: bytes '.$start.'-'.$end.'/'.$rsize);
 				header('Content-Length: '.($end - $start + 1));
-				$streamSize = $rsize;
+				$streamSize = $end - $start + 1;
 			} else {
 				$this->sendDownloadHeaders($filename, $type, $mobile, $size);
 				if ($size) $streamSize = $size;
@@ -163,7 +163,7 @@
 				header('Accept-Ranges: bytes');
 				header('Content-Range: bytes '.$start.'-'.$end.'/'.$rsize);
 				header('Content-Length: '.($end - $start + 1));
-				$streamSize = $rsize;
+				$streamSize = $end - $start + 1;
 			} else {
 				if ($size) {
 					header("Content-Length: ".$size);
@@ -189,14 +189,21 @@
 			//if ($this->supportOutputBuffer) ob_start();
 			$chunk = 1024;
 			$count = 0;
+			$remaining = $size;	// NULL: send until the end of the stream
 
-			while (!feof($stream)) {
+			while (!feof($stream) and ($remaining === NULL or $remaining > 0)) {
 				$count = $count + 1;
-				$read = $chunk;
-				//TODO if size, make sure only up to size is read
+				$read = ($remaining === NULL) ? $chunk : min($chunk, $remaining);
 
 				set_time_limit(0);
-				echo fread($stream, $read);
+				$data = fread($stream, $read);
+				if ($data === FALSE) {
+					break;
+				}
+				if ($remaining !== NULL) {
+					$remaining -= strlen($data);
+				}
+				echo $data;
 				if ($this->supportOutputBuffer and ob_get_length() != FALSE) @ob_flush();
 				flush();
 			}

@@ -83,10 +83,14 @@ The checklist describes tested components, not whole-application certification.
 - Fixed from it: `POST filesystem/<id>/info` and `filesystem/roots/info` returned
   HTTP 500 when the body lacked `data` (undefined-key read made an exception by
   r.php's handler); they now treat it as absent.
-- Found, not fixed (also PHP 7): a ranged download sends `Content-Length` for the
-  range but the body continues to the end of the file (`downloadBinary` streams
-  the total size from the range start). Clients that honor Content-Length stop in
-  time; others receive extra bytes.
+- Approved fixes (2026-10-22), all covered by tests: a NULL session user id is
+  treated as user 0 in `PermissionsDao` generic/children lookups (anonymous
+  permission checks now answer "denied" instead of a SQL error); ranged
+  downloads/views now stop at the end of the requested range
+  (`OutputHandler::doSendBinary` honors its size, passed as `end - start + 1`);
+  `FilesystemController::view()` fires `FileEvent::view` for plain (non-range)
+  views, as `download()` does for downloads, so EventLogging/Notificator now see
+  `filesystem/view`.
 - Item 2 progress: backend/test/InstallerTest.php runs a fresh PDO/SQLite install
   (schema, params, every bundled plugin's install.sql, admin user) against a temp
   file and logs the admin in through the real backend; it also drives the updater's
@@ -95,22 +99,20 @@ The checklist describes tested components, not whole-application certification.
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 154 tests, 969 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 157 tests, 997 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
-- Found for item 3, not changed (schema/version declarations need approval): a
-  fresh PDO install writes version `2_7_28` (params.sql) but the PDO
-  `DatabaseUtil::getVersionHistory()` only lists `2_6_7` (SQLite lists up to
-  `2_7_14`, MySQL up to `2_7_28`), so the updater reports an up-to-date PDO or
-  SQLite install as needing an update and then stops with "Unknown version". The
-  PostgreSQL params.sql records `2_0`. Upgrade paths 2_6_7 to 2_7_28 are untested:
-  no old-schema fixtures exist.
+- Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
+  `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
+  needing an update. Aligning them activated the SQLite 2_7_14 to 2_7_28 script,
+  which dropped and recreated `item_id` without copying the rows back (all item
+  ids, and with them shares/comments/notification filters, would have been lost);
+  it now restores the rows. Tests upgrade a 2_6_7-state SQLite database to 2_7_28
+  with every item id and level preserved, and show a failing step rolls back and
+  can be retried. Still open: MySQL/PostgreSQL upgrade rehearsal (PostgreSQL has
+  no update scripts and its params.sql records `2_0`), plugin upgrade paths, and
+  rollback of a failed upgrade on a real file database copy.
 - Pre-existing (PHP 7 too), fixed: three bare `invalidRequestException()` calls in
   FilesystemServices (fatal undefined function instead of INVALID_REQUEST).
-- Pre-existing (PHP 7 too), not fixed: an unauthenticated permission check builds
-  `user_id in (0,)` because the session user id is NULL, so
-  `PermissionsDao::getEffectiveGenericPermissions` fails with a SQL error
-  (reported as INVALID_CONFIGURATION instead of INSUFFICIENT_PERMISSIONS). Also
-  `ShareHandler` uses the Windows-only `com_create_guid()`.
 
 ### Recorded Verification
 

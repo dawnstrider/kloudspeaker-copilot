@@ -6,6 +6,7 @@ require_once 'install/pdo/PDOInstallUtil.class.php';
 require_once 'db/pdo/DatabaseUtil.class.php';
 require_once 'install/pdo/PDOInstaller.class.php';
 require_once 'update/UpdateController.class.php';
+require_once 'update/pdo/PDOUpdater.class.php';
 
 class KloudspeakerInstallerTest extends \PHPUnit\Framework\TestCase {
 	private $file;
@@ -52,6 +53,7 @@ class KloudspeakerInstallerTest extends \PHPUnit\Framework\TestCase {
 		$db->commit();
 
 		$this->assertSame('2_7_28', $dbUtil->installedVersion());
+		$this->assertSame($dbUtil->installedVersion(), $dbUtil->currentVersion());
 		foreach (array('Comment' => '1_0', 'Notificator' => '1_1', 'Registration' => '1_2', 'Share' => '1_5') as $id => $version) {
 			$this->assertSame($version, $dbUtil->pluginInstalledVersion($id), $id);
 		}
@@ -120,5 +122,85 @@ class KloudspeakerInstallerTest extends \PHPUnit\Framework\TestCase {
 		Kloudspeaker_RuntimePreflight::assertUsable($processor, 'mysql', $problems);
 		$this->assertSame('Unsupported PHP version', $processor->error[0]);
 		$this->assertSame('install_error', $processor->page);
+	}
+
+	/** Builds a database in the 2_6_7 state: the shipped schema, but with the old item_id table and version. */
+	private function createLegacySqlite(): PDO {
+		$pdo = new PDO('sqlite:' . $this->file);
+		$pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+		$pdo->exec(file_get_contents(__DIR__ . '/../db/sqlite/sql/install/create_tables.sql'));
+		$pdo->exec(file_get_contents(__DIR__ . '/../db/sqlite/sql/install/params.sql'));
+		$pdo->exec('DROP TABLE item_id');
+		$pdo->exec('CREATE TABLE item_id (id char(13) NOT NULL, path char(255) NOT NULL, PRIMARY KEY (id))');
+		$pdo->exec("UPDATE parameter SET value = '2_6_7' WHERE name = 'version'");
+		return $pdo;
+	}
+
+	public function testSqliteUpgradeFrom267To2728KeepsEveryItemId(): void {
+		$legacy = $this->createLegacySqlite();
+		$rows = array(array('4f1c2a9b8d7e6', '1:'), array('9a8b7c6d5e4f3', '1:docs/'), array('0123456789abc', '1:docs/readme.txt'), array('c0ffee0000000', '2:zip/a/b/'));
+		foreach ($rows as $row) {
+			$legacy->prepare('INSERT INTO item_id (id, path) VALUES (?, ?)')->execute($row);
+		}
+		$legacy = NULL;
+
+		$settings = array('debug' => FALSE, 'timezone' => 'Europe/Helsinki', 'plugins' => array(), 'host_public_address' => 'http://kloudspeaker.test', 'db' => array('str' => 'sqlite:' . $this->file, 'user' => '', 'password' => ''));
+		$updater = new PDOUpdater($settings);
+		$updater->init();
+		$this->assertSame('2_6_7', $updater->installedVersion());
+		$this->assertSame('2_7_28', $updater->currentVersion());
+		$this->assertFalse($updater->isCurrentVersionInstalled());
+		$updater->processor()->createEnvironment($updater->db());
+
+		$controller = new UpdateController($updater);
+		$method = new ReflectionMethod(UpdateController::class, 'updateSystem');
+		$this->assertSame('Kloudspeaker updated to 2.7.28', $method->invoke($controller));
+
+		$this->assertSame('2_7_28', $updater->installedVersion());
+		$this->assertTrue($updater->isCurrentVersionInstalled());
+		$upgraded = new PDO('sqlite:' . $this->file);
+		$stored = $upgraded->query('SELECT id, path, level FROM item_id ORDER BY id')->fetchAll(PDO::FETCH_ASSOC);
+		$expected = array(
+			array('id' => '0123456789abc', 'path' => '1:docs/readme.txt', 'level' => 2),
+			array('id' => '4f1c2a9b8d7e6', 'path' => '1:', 'level' => 1),
+			array('id' => '9a8b7c6d5e4f3', 'path' => '1:docs/', 'level' => 1),
+			array('id' => 'c0ffee0000000', 'path' => '2:zip/a/b/', 'level' => 3),
+		);
+		// same rule as ItemIdProvider::getLevel(): path delimiters before the last character, plus one
+		$this->assertEquals($expected, $stored);
+		$this->assertNotFalse($upgraded->query("SELECT 1 FROM sqlite_master WHERE name = 'i_item_path_level'")->fetchColumn());
+	}
+
+	public function testSqliteUpgradeRollsBackAndCanBeRetriedWhenAStepFails(): void {
+		$legacy = $this->createLegacySqlite();
+		$legacy->exec("UPDATE parameter SET value = '2_7_14' WHERE name = 'version'");
+		$legacy->exec('DROP TABLE item_id');	// the 2_7_14 to 2_7_28 step cannot find its source table
+		$legacy = NULL;
+
+		$settings = array('debug' => FALSE, 'timezone' => 'Europe/Helsinki', 'plugins' => array(), 'host_public_address' => 'http://kloudspeaker.test', 'db' => array('str' => 'sqlite:' . $this->file, 'user' => '', 'password' => ''));
+		$updater = new PDOUpdater($settings);
+		$updater->init();
+		$updater->processor()->createEnvironment($updater->db());
+		$method = new ReflectionMethod(UpdateController::class, 'updateSystem');
+		$controller = new UpdateController($updater);
+
+		$updater->db()->startTransaction();
+		try {
+			$method->invoke($controller);
+			$this->fail('A failing update step must raise a service error');
+		} catch (ServiceException $e) {
+			$updater->db()->rollback();
+		}
+		$this->assertSame('2_7_14', $updater->installedVersion());
+
+		$repair = new PDO('sqlite:' . $this->file);
+		$repair->exec('CREATE TABLE item_id (id char(13) NOT NULL, path char(255) NOT NULL, level smallint NOT NULL, PRIMARY KEY (id))');
+		$repair->exec("INSERT INTO item_id (id, path, level) VALUES ('4f1c2a9b8d7e6', '1:docs/', 1)");
+		$repair = NULL;
+		$updater->db()->startTransaction();
+		$this->assertSame('Kloudspeaker updated to 2.7.28', $method->invoke($controller));
+		$updater->db()->commit();
+		$this->assertSame('2_7_28', $updater->installedVersion());
+		$this->assertSame('1:docs/', $updater->db()->query("SELECT path FROM item_id WHERE id = '4f1c2a9b8d7e6'")->value(0));
 	}
 }

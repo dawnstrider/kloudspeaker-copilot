@@ -12,6 +12,7 @@ CREATE TABLE item_id (
 CREATE INDEX i_item_level ON item_id (level);
 CREATE INDEX i_item_path_level ON item_id (path, level);
 
+INSERT INTO item_id(id, level, path) SELECT id, level, path FROM itemid_backup;
 DROP TABLE itemid_backup;
 
 UPDATE parameter SET value = '2_7_28' where name = 'version';
