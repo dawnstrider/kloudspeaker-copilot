@@ -585,4 +585,103 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 			rmdir($root);
 		}
 	}
+
+	public function testPublicFileSharesHonourRestrictionsExpirationAndActivation(): void {
+		$settings = $this->shareSettings();
+		$root = sys_get_temp_dir() . '/kloudspeaker-public-' . bin2hex(random_bytes(4));
+		try {
+			$fileId = $this->fileFixture(120, 'publisher', $settings, $root);
+			$create = function (array $extra) use ($fileId, $settings) {
+				$shares = $this->processRequest('POST', 'share', array(), array_merge(array('item' => $fileId, 'name' => 'fixture', 'type' => 'download'), $extra), $settings);
+				return end($shares)['id'];
+			};
+			$open = $create(array());
+			$private = $create(array('restriction' => array('type' => 'private')));
+			$password = $create(array('restriction' => array('type' => 'pw', 'value' => 'share-secret')));
+			$expired = $create(array('expiration' => '20000101000000'));
+			$inactive = $create(array('active' => FALSE));
+			$publisherSession = $this->sessionId;
+			$this->sessionId = NULL;
+
+			$download = function (string $id, array $params = array()) use ($settings) {
+				$this->responseHandler = NULL;
+				$this->processRequest('GET', 'public/' . $id, $params, NULL, $settings);
+				return $this->responseHandler->lastDownload;
+			};
+			$denied = function (string $type, callable $call) {
+				try {
+					$call();
+					$this->fail('Expected ' . $type);
+				} catch (ServiceException $e) {
+					$this->assertSame($type, $e->type());
+				}
+			};
+
+			$this->assertSame(array('name' => 'doc.txt', 'type' => 'txt', 'content' => 'payload'), $download($open));
+			$this->assertSame('download', $this->processRequest('GET', 'public/' . $open . '/info', array(), NULL, $settings)['type']);
+
+			$denied('UNAUTHORIZED', fn() => $download($private));
+			$denied('UNAUTHORIZED', fn() => $download($password));
+			$denied('UNAUTHORIZED', fn() => $download($password, array('ak' => base64_encode('wrong'))));
+			$this->assertSame('payload', $download($password, array('ak' => base64_encode('share-secret')))['content']);
+			$this->assertSame(array('result' => FALSE), $this->processRequest('POST', 'public/' . $password . '/key', array(), array('key' => base64_encode('wrong')), $settings));
+			$this->assertSame(array('result' => TRUE), $this->processRequest('POST', 'public/' . $password . '/key', array(), array('key' => base64_encode('share-secret')), $settings));
+
+			$denied('INVALID_REQUEST', fn() => $download($expired));
+			$denied('INVALID_REQUEST', fn() => $download($inactive));
+			$denied('INVALID_REQUEST', fn() => $download('missing'));
+			$this->assertNull($this->processRequest('GET', 'public/' . $expired . '/info', array(), NULL, $settings));
+
+			$this->sessionId = $publisherSession;
+			$this->assertSame('payload', $download($private)['content']);
+		} finally {
+			unlink($root . '/doc.txt');
+			rmdir($root);
+		}
+	}
+
+	public function testPreparedFolderDownloadShareBuildsAndServesAZip(): void {
+		$settings = $this->shareSettings();
+		$settings['plugins']['Archiver'] = array();
+		$root = sys_get_temp_dir() . '/kloudspeaker-prepared-' . bin2hex(random_bytes(4));
+		try {
+			$this->fileFixture(130, 'packer', $settings, $root);
+			$rootId = $this->processRequest('GET', 'session/info', array(), NULL, $settings)['folders'][0]['id'];
+			$shares = $this->processRequest('POST', 'share', array(), array('item' => $rootId, 'name' => 'package', 'type' => 'prepared_download'), $settings);
+			$shareId = $shares[0]['id'];
+
+			$expect = function (string $type, callable $call) {
+				try {
+					$call();
+					$this->fail('Expected ' . $type);
+				} catch (ServiceException $e) {
+					$this->assertSame($type, $e->type());
+				}
+			};
+			$expect('INVALID_REQUEST', fn() => $this->processRequest('GET', 'public/' . $shareId, array(), NULL, $settings));
+			$expect('INVALID_REQUEST', fn() => $this->processRequest('GET', 'public/' . $shareId, array('key' => 'unknown'), NULL, $settings));
+
+			$key = $this->processRequest('GET', 'public/' . $shareId . '/prepare', array(), NULL, $settings)['key'];
+			$this->processRequest('GET', 'public/' . $shareId, array('key' => $key), NULL, $settings);
+			$sent = $this->responseHandler->lastSentFile;
+			$this->assertSame('zip', $sent['type']);
+			$zipPath = sys_get_temp_dir() . '/kloudspeaker-prepared-check-' . bin2hex(random_bytes(4)) . '.zip';
+			file_put_contents($zipPath, $sent['content']);
+			try {
+				$zip = new ZipArchive();
+				$this->assertTrue($zip->open($zipPath) === TRUE);
+				$names = array();
+				for ($i = 0; $i < $zip->numFiles; $i++) {
+					$names[] = $zip->getNameIndex($i);
+				}
+				$zip->close();
+				$this->assertContains('doc.txt', array_map('basename', $names));
+			} finally {
+				unlink($zipPath);
+			}
+		} finally {
+			unlink($root . '/doc.txt');
+			rmdir($root);
+		}
+	}
 }

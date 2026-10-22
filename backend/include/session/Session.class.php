@@ -247,7 +247,7 @@ class Session {
 
 	public function param($param, $value = NULL) {
 		if ($value === NULL) {
-			return $this->data[$param];
+			return $this->data[$param] ?? NULL;
 		}
 
 		$this->data[$param] = $value;

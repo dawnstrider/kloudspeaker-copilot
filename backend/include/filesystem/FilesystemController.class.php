@@ -1220,7 +1220,7 @@ class FilesystemController {
 		$size = $file->size();
 		$range = $this->getDownloadRangeInfo($range, $size);
 
-		if ($range or $range[0] == 0)  $this->validateAction(FileEvent::DOWNLOAD, $file, array("mobile" => $mobile, "range" => $range, "size" => $size));
+		if ($range or ($range[0] ?? NULL) == 0)  $this->validateAction(FileEvent::DOWNLOAD, $file, array("mobile" => $mobile, "range" => $range, "size" => $size));
 
 		if ($this->triggerActionInterceptor(FileEvent::DOWNLOAD, $file, array("mobile" => $mobile, "range" => $range, "size" => $size))) {
 			return;

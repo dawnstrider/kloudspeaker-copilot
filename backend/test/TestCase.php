@@ -94,12 +94,16 @@ class TestResponseHandler {
 	
 	public function addListener($l) {}
 	
+	public $lastDownload = FALSE;
+
 	public function download($filename, $type, $mobile, $stream, $size = NULL, $range = NULL) {
-		//TODO
+		$this->lastDownload = array('name' => $filename, 'type' => $type, 'content' => is_resource($stream) ? stream_get_contents($stream) : $stream);
 	}
 
+	public $lastSentFile = FALSE;
+
 	public function sendFile($file, $name, $type, $mobile, $size = NULL) {
-		//TODO
+		$this->lastSentFile = array('name' => $name, 'type' => $type, 'content' => file_get_contents($file));
 	}
 
 	public function send($filename, $type, $stream, $size = NULL) {
