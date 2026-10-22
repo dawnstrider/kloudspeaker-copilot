@@ -223,7 +223,7 @@ class Authentication {
 		}
 
 		$user = $this->env->session()->user();
-		return (strcasecmp($user["user_type"], self::USER_TYPE_ADMIN) === 0);
+		return (strcasecmp((string) $user["user_type"], self::USER_TYPE_ADMIN) === 0);
 	}
 
 	public function log() {

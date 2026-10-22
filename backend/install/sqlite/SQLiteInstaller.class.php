@@ -19,6 +19,7 @@ class SQLiteInstaller {
 	protected $processor;
 	private $configured;
 	protected $db;
+	private $dbUtil;
 
 	public function __construct($settings, $type = "install") {
 		$this->type = $settings["db"]["type"];

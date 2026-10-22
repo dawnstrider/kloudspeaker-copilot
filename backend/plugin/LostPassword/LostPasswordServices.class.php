@@ -61,7 +61,6 @@
 		
 		private function createNewPassword() {
 			$chars = "abcdefghijkmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-			srand((double)microtime()*1000000);
 			$count = 0;
 			$result = '';
 

@@ -13,7 +13,7 @@ require_once "TrashBinManager.class.php";
 require_once "TrashBinFS.class.php";
 
 class TrashBin extends PluginBase {
-	private $trashManager;
+	private $trashBinManager;
 
 	public function version() {
 		if (!$this->hasSetting("folder")) return NULL;

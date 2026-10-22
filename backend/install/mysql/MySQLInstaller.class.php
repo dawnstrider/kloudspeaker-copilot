@@ -20,6 +20,7 @@ class MySQLInstaller {
 	private $settings;
 	private $configured;
 	protected $db;
+	private $dbUtil;
 
 	public function __construct($settings, $type = "install") {
 		$this->settings = $settings;

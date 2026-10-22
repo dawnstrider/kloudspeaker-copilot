@@ -20,6 +20,7 @@
 		private $configured;
 		protected $db;
 		private $settings;
+		private $dbUtil;
 
 		public function __construct($settings, $type = "install") {
 			$this->settings = $settings;

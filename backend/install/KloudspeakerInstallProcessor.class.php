@@ -22,6 +22,7 @@ class KloudspeakerInstallProcessor {
 	private $plugins;
 	private $features;
 	private $cookies;
+	private $passwordHash;
 	private $resources;
 
 	private $error = NULL;

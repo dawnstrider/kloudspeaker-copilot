@@ -10,6 +10,7 @@ abstract class Kloudspeaker_TestCase extends TestCase {
 	
 	private $pdo;
     protected $responseHandler = null;
+    protected $mailer = null;
 
 	protected function setUp(): void {
 		parent::setUp();
@@ -53,18 +54,22 @@ abstract class Kloudspeaker_TestCase extends TestCase {
 		return $this->pdo;
     }
     
-    protected function getBackend() {
+    protected function getBackend($extraSettings = array()) {
     	Logging::initialize(self::$CONFIGURATION, "Test");
 		$this->responseHandler = new TestResponseHandler();
 		$db = PDODatabase::createFromObj($this->pdo, "sqlite");
-		$settings = new Settings(self::$CONFIGURATION);
+		$settings = new Settings(array_merge(self::$CONFIGURATION, $extraSettings));
 		$backend = new KloudspeakerBackend($settings, $db, $this->responseHandler);
 		//$backend->processRequest(new Request());
 		return $backend;
     }
     
-    protected function processRequest($method, $url, $params = array(), $data = NULL) {
-	    $b = $this->getBackend();
+    protected function processRequest($method, $url, $params = array(), $data = NULL, $extraSettings = array()) {
+	    $b = $this->getBackend($extraSettings);
+	    if ($this->mailer !== NULL) {
+	    	$property = new ReflectionProperty(ServiceEnvironment::class, 'mailer');
+	    	$property->setValue($b->env(), $this->mailer);
+	    }
 	    $parts = strlen($url) > 0 ? explode("/", $url) : array();
 	    $r = new Request(NULL, strtolower($method), $url, "test-ip", $parts, $params, $data);
 	    $b->processRequest($r);
@@ -84,6 +89,7 @@ abstract class Kloudspeaker_TestCase extends TestCase {
 class TestResponseHandler {
 	public $lastSuccess = FALSE;
 	public $lastErrorType = FALSE;
+	public $lastFail = FALSE;
 	
 	public function addListener($l) {}
 	
@@ -105,6 +111,10 @@ class TestResponseHandler {
 	
 	public function success($data) {
 		$this->lastSuccess = $data;
+	}
+
+	public function fail($code, $error, $details = NULL, $data = NULL) {
+		$this->lastFail = array($code, $error);
 	}
 
 	public function error($type, $details, $data = NULL) {

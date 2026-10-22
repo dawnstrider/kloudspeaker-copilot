@@ -70,6 +70,7 @@ class RegistrationEvent extends Event {
 		return new RegistrationEvent(self::USER_FOLDER_CREATED, $userId, $username, $email, $registrationId, FALSE, $userFolder);
 	}
 
+	protected $email;
 	private $registrationId;
 	private $registrationKey;
 	private $data;

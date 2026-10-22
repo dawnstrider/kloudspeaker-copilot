@@ -46,6 +46,23 @@ The checklist describes tested components, not whole-application certification.
 6. Add CI gates, a reproducible release package, deployment documentation, and
    a rehearsed restore of code, database, and managed files together.
 
+### Progress Since Checkpoint (2026-10-22)
+
+- Declared undeclared properties in the installers (`dbUtil`, `passwordHash`),
+  `RegistrationEvent::$email` and `TrashBin::$trashBinManager`; removed the
+  `srand()` float call in LostPassword; cast a null `user_type` in
+  `Authentication::isAdmin()` (PHP 8.1 null-to-string deprecation).
+- Added backend/test/PluginTest.php: all bundled plugins register, LostPassword
+  reset/hint/rejection flows and Registration create/confirm/authenticate flows
+  run under E_ALL with a capture mailer. Default suite: 132 tests, 771 assertions.
+- Plugin item 1 is still open for Share, Notificator, ItemCollection, SendViaEmail,
+  Comment, TrashBin and editing flows.
+- Pre-existing (PHP 7 too), not fixed: an unauthenticated permission check builds
+  `user_id in (0,)` because the session user id is NULL, so
+  `PermissionsDao::getEffectiveGenericPermissions` fails with a SQL error
+  (reported as INVALID_CONFIGURATION instead of INSUFFICIENT_PERMISSIONS). Also
+  `ShareHandler` uses the Windows-only `com_create_guid()`.
+
 ### Recorded Verification
 
 The last implementation checkpoint passed on PHP 8.2.35:
