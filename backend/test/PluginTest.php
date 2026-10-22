@@ -421,4 +421,106 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 			rmdir($root);
 		}
 	}
+
+	/** Creates a temp root folder with one file, grants it to a new admin user and logs in; returns the file item id. */
+	private function fileFixture(int $userId, string $name, array $settings, string $root): string {
+		mkdir($root);
+		file_put_contents($root . '/doc.txt', 'payload');
+		$this->getConnection()->exec("INSERT INTO folder (id, name, path, type) VALUES (1, 'Root', '" . $root . "', 'local')");
+		$this->createUser($userId, $name, $name . '@example.test', $name . '-pw');
+		$this->getConnection()->exec("INSERT INTO user_folder (user_id, folder_id, name) VALUES ($userId, 1, NULL)");
+		$this->login($name, $name . '-pw', $settings);
+		$rootId = $this->processRequest('GET', 'session/info', array(), NULL, $settings)['folders'][0]['id'];
+		return $this->processRequest('GET', 'filesystem/' . $rootId . '/files', array(), NULL, $settings)[0]['id'];
+	}
+
+	public function testCommentsCanBeAddedListedRemovedAndAreDeletedWithTheirItem(): void {
+		$this->getConnection()->exec(file_get_contents(__DIR__ . '/../plugin/Comment/sqlite/install.sql'));
+		$settings = array('plugins' => array('Comment' => array()), 'host_public_address' => 'http://kloudspeaker.test');
+		$root = sys_get_temp_dir() . '/kloudspeaker-comment-' . bin2hex(random_bytes(4));
+		try {
+			$fileId = $this->fileFixture(80, 'commenter', $settings, $root);
+			try {
+				$this->processRequest('POST', 'comment/' . $fileId, array(), array('comment' => ''), $settings);
+				$this->fail('Empty comments must be rejected');
+			} catch (ServiceException $e) {
+				$this->assertSame('INVALID_REQUEST', $e->type());
+			}
+
+			$this->assertSame(array('count' => 1), $this->processRequest('POST', 'comment/' . $fileId, array(), array('comment' => 'first'), $settings));
+			$this->assertSame(array('count' => 2), $this->processRequest('POST', 'comment/' . $fileId, array(), array('comment' => 'second'), $settings));
+			$comments = $this->processRequest('GET', 'comment/' . $fileId, array(), NULL, $settings);
+			$this->assertCount(2, $comments);
+			$withPermission = $this->processRequest('GET', 'comment/' . $fileId, array('p' => '1'), NULL, $settings);
+			$this->assertCount(2, $withPermission['comments']);
+			$this->assertArrayHasKey('permission', $withPermission);
+
+			$remaining = $this->processRequest('DELETE', 'comment/' . $fileId . '/' . $comments[0]['id'], array(), NULL, $settings);
+			$this->assertCount(1, $remaining);
+
+			$this->processRequest('DELETE', 'filesystem/' . $fileId, array(), NULL, $settings);
+			$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM comment')->fetchColumn());
+			$this->assertFileDoesNotExist($root . '/doc.txt');
+		} finally {
+			if (is_file($root . '/doc.txt')) {
+				unlink($root . '/doc.txt');
+			}
+			rmdir($root);
+		}
+	}
+
+	public function testTrashBinSoftDeletesRestoresAndPurges(): void {
+		$this->getConnection()->exec(file_get_contents(__DIR__ . '/../plugin/TrashBin/sqlite/install.sql'));
+		$base = sys_get_temp_dir() . '/kloudspeaker-trash-' . bin2hex(random_bytes(4));
+		$root = $base . '-root';
+		$trash = $base . '-bin';
+		mkdir($trash);
+		$settings = array('plugins' => array('TrashBin' => array('folder' => $trash)), 'host_public_address' => 'http://kloudspeaker.test');
+		try {
+			$fileId = $this->fileFixture(90, 'trasher', $settings, $root);
+			$this->processRequest('DELETE', 'filesystem/' . $fileId, array(), NULL, $settings);
+			$this->assertFileDoesNotExist($root . '/doc.txt');
+			$this->assertSame(1, (int) $this->getConnection()->query('SELECT COUNT(*) FROM trashbin')->fetchColumn());
+
+			$data = $this->processRequest('POST', 'trash/data', array(), array(), $settings);
+			$this->assertCount(1, $data['items']);
+			$this->assertSame('doc.txt', $data['items'][0]['name']);
+			$trashed = array_values($data['data'])[0];
+
+			$restored = $this->processRequest('POST', 'trash/restore', array(), array('items' => array($trashed['id'])), $settings);
+			$this->assertNotEmpty($restored);
+			$this->assertSame('payload', file_get_contents($root . '/doc.txt'));
+			$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM trashbin')->fetchColumn());
+
+			$listing = $this->processRequest('GET', 'session/info', array(), NULL, $settings);
+			$rootId = $listing['folders'][0]['id'];
+			$fileId = $this->processRequest('GET', 'filesystem/' . $rootId . '/files', array(), NULL, $settings)[0]['id'];
+			$this->processRequest('DELETE', 'filesystem/' . $fileId, array(), NULL, $settings);
+			$trashed = array_values($this->processRequest('POST', 'trash/data', array(), array(), $settings)['data'])[0];
+			$this->processRequest('POST', 'trash/delete', array(), array('items' => array($trashed['id'])), $settings);
+			$this->assertSame(0, (int) $this->getConnection()->query('SELECT COUNT(*) FROM trashbin')->fetchColumn());
+			$this->assertFileDoesNotExist($root . '/doc.txt');
+			$this->assertSame(array(), $this->processRequest('POST', 'trash/empty', array(), array(), $settings));
+
+			foreach (array('delete', 'restore') as $action) {
+				try {
+					$this->processRequest('POST', 'trash/' . $action, array(), array('items' => array()), $settings);
+					$this->fail('An empty item list must be rejected');
+				} catch (ServiceException $e) {
+					$this->assertSame('INVALID_REQUEST', $e->type());
+				}
+			}
+		} finally {
+			foreach (array($root, $trash) as $dir) {
+				if (!is_dir($dir)) {
+					continue;
+				}
+				$it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+				foreach ($it as $f) {
+					$f->isDir() ? rmdir($f->getPathname()) : unlink($f->getPathname());
+				}
+				rmdir($dir);
+			}
+		}
+	}
 }
