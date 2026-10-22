@@ -44,8 +44,8 @@ Status as of 2026-10-22 (details in the progress notes below):
    (needs a decision) and two adapter inconsistencies listed below.
 4. Real HTTP/browser workflows: authentication, cookies, permissions, byte-exact
    upload/download, ranges, public shares and interrupted transfers pass on the PHP
-   built-in server. Open: Apache/nginx + PHP-FPM, HTTPS, browser (JavaScript)
-   flows, previews/thumbnails over HTTP.
+   built-in server, as do archives, thumbnails and watermarked PDFs. Open:
+   Apache/nginx + PHP-FPM, HTTPS, browser (JavaScript) flows.
 5. Not started: SMTP TLS/certificate negotiation, representative customer PDFs,
    Windows/platform filesystems, ownership/ACLs, concurrent changes, very large
    archives.
@@ -107,7 +107,7 @@ Status as of 2026-10-22 (details in the progress notes below):
   backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
   driver extension for the chosen database type), called from the MySQL, PDO and
   SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
-  host. Default suite: 164 tests, 1065 assertions; all 202 non-vendor backend PHP
+  host. Default suite: 165 tests, 1077 assertions; all 202 non-vendor backend PHP
   files lint clean on PHP 8.2.12.
 - Item 3 progress: the PDO and SQLite `getVersionHistory()` now list `2_6_7`,
   `2_7_14`, `2_7_28` like MySQL, so a current install is no longer reported as
@@ -132,6 +132,9 @@ Status as of 2026-10-22 (details in the progress notes below):
   downloads of folders and several items, compress into a managed folder with
   duplicate rejection, extract, and GD thumbnails (size bound, unsupported type,
   anonymous denial) are tested with checksum comparison of the zip entries.
+  A watermarked PDF download over HTTP keeps the source text and adds the
+  watermark text, excluded users get the original bytes, other types are untouched
+  and no temporary files remain.
 - Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
   backend/test/phpunit.database.xml) installs the full schema plus every bundled
   plugin's tables into a prefixed set of tables, logs the new admin in through the
@@ -170,11 +173,11 @@ The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 164 tests, 1065 assertions (includes plugin, installer/updater and real-HTTP tests) |
+| Default PHPUnit suite | 165 tests, 1077 assertions (includes plugin, installer/updater and real-HTTP tests) |
 | MySQL integration (MariaDB 11.4.13) | 20 tests, 140 assertions (adapter contracts, full-schema install, 2_6_7 to 2_7_28 upgrade, plugin upgrades) |
 | PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| Total | 201 tests, 1388 assertions |
+| Total | 202 tests, 1401 assertions |
 | Standalone compatibility checks | Passed (first step of the default runner) |
 | Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 

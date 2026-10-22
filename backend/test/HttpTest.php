@@ -348,4 +348,50 @@ class KloudspeakerHttpTest extends Kloudspeaker_HttpTestCase {
 		$anonymous = $this->http('GET', 'filesystem/' . $photoId . '/thumbnail');
 		$this->assertSame(401, $anonymous['status']);
 	}
+
+	private function pdfText(string $bytes): string {
+		$path = $this->baseDir . '/text-' . bin2hex(random_bytes(3)) . '.pdf';
+		file_put_contents($path, $bytes);
+		$text = (string) shell_exec('pdftotext ' . escapeshellarg($path) . ' - 2>/dev/null');
+		unlink($path);
+		return $text;
+	}
+
+	public function testWatermarkedPdfDownloadOverHttpMarksOnlyPdfsForNonExcludedUsers(): void {
+		require_once 'vendor/fpdf/fpdf.php';
+		$watermarking = array('watermark_text' => 'Downloaded by %username%', 'types' => array('pdf' => 'PDFMarker'), 'exclude_users' => array(2));
+		list($session, $folderId, $root, $pdo) = $this->startWithFolder(array('plugins' => array('Watermarking' => $watermarking)));
+		$this->createUser($pdo, 2, 'exempt', 'exempt-pw');
+		$pdo->exec('INSERT INTO user_folder (user_id, folder_id, name) VALUES (2, 1, NULL)');
+		$exemptSession = $this->login('exempt', 'exempt-pw');
+
+		$pdf = new FPDF();
+		foreach (array(1, 2) as $page) {
+			$pdf->AddPage();
+			$pdf->SetFont('Helvetica', '', 14);
+			$pdf->Text(20, 30, 'SOURCE PAGE ' . $page);
+		}
+		$pdf->Output('F', $root . '/report.pdf');
+		file_put_contents($root . '/notes.txt', 'plain notes');
+		$files = $this->listFiles($folderId, $session);
+		$pdfId = current(array_filter($files, fn($f) => $f['name'] === 'report.pdf'))['id'];
+		$txtId = current(array_filter($files, fn($f) => $f['name'] === 'notes.txt'))['id'];
+
+		$marked = $this->http('GET', 'filesystem/' . $pdfId . '?session=' . $session);
+		$this->assertSame(200, $marked['status'], substr($marked['body'], 0, 300));
+		$this->assertStringStartsWith('%PDF', $marked['body']);
+		$this->assertNotSame(md5_file($root . '/report.pdf'), md5($marked['body']));
+		$text = $this->pdfText($marked['body']);
+		$this->assertStringContainsString('SOURCE PAGE 1', $text);
+		$this->assertStringContainsString('SOURCE PAGE 2', $text);
+		$this->assertStringContainsString('Downloaded by uploader', $text);
+
+		$exempt = $this->http('GET', 'filesystem/' . $pdfId . '?session=' . $exemptSession);
+		$this->assertSame(md5_file($root . '/report.pdf'), md5($exempt['body']), 'excluded users receive the original bytes');
+
+		$plain = $this->http('GET', 'filesystem/' . $txtId . '?session=' . $session);
+		$this->assertSame('plain notes', $plain['body']);
+		$this->assertSame(array('report.pdf', 'notes.txt'), array_values(array_intersect(array('report.pdf', 'notes.txt'), array_diff(scandir($root), array('.', '..')))));
+		$this->assertSame(array(), glob(sys_get_temp_dir() . '/Kloudspeaker*'), 'temporary watermarked files are removed');
+	}
 }
