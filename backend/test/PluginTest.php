@@ -523,4 +523,66 @@ class KloudspeakerPluginTest extends Kloudspeaker_TestCase {
 			}
 		}
 	}
+
+	public function testEventLoggingRecordsEventsAndAnswersAdminQueries(): void {
+		$settings = array('plugins' => array('EventLogging' => array()), 'host_public_address' => 'http://kloudspeaker.test');
+		$this->createUser(100, 'logadmin', 'logadmin@example.test', 'log-pw');
+		$this->createUser(101, 'plain', 'plain@example.test', 'plain-pw');
+		$this->getConnection()->exec('UPDATE user SET user_type = NULL WHERE id = 101');
+
+		$this->login('plain', 'plain-pw', $settings);
+		try {
+			$this->processRequest('POST', 'eventlog/query', array(), array(), $settings);
+			$this->fail('Only administrators may query the event log');
+		} catch (ServiceException $e) {
+			$this->assertSame('UNAUTHORIZED', $e->type());
+		}
+
+		$this->login('logadmin', 'log-pw', $settings);
+		$result = $this->processRequest('POST', 'eventlog/query', array(), array('type' => 'session/login', 'sort' => array('id' => 'id', 'asc' => TRUE)), $settings);
+		$this->assertSame(2, $result['total']);
+		$this->assertSame('plain', $result['data'][0]['user']);
+		$this->assertSame('test-ip', $result['data'][0]['ip']);
+
+		$byUser = $this->processRequest('POST', 'eventlog/query', array(), array('user' => 'log*', 'type' => 'session/*'), $settings);
+		$this->assertSame(1, $byUser['total']);
+		$this->assertSame(1, $this->processRequest('POST', 'eventlog/query', array(), array('type' => 'session/login', 'count' => 1), $settings)['count']);
+		$this->assertSame(array(), $this->processRequest('POST', 'eventlog/downloads', array(), array(), $settings));
+
+		foreach (array(array('start_time' => 'yesterday'), array('end_time' => 'x'), array('sort' => array('id' => 'password'))) as $bad) {
+			try {
+				$this->processRequest('POST', 'eventlog/query', array(), $bad, $settings);
+				$this->fail('Invalid query data must be rejected');
+			} catch (ServiceException $e) {
+				$this->assertSame('INVALID_REQUEST', $e->type());
+			}
+		}
+	}
+
+	public function testFileViewerEditorServesViewableFilesAndReportsCapabilities(): void {
+		$settings = array('plugins' => array('FileViewerEditor' => array('editors' => array('TextFile' => array('txt')), 'viewers' => array('Direct' => array('txt')))), 'host_public_address' => 'http://kloudspeaker.test');
+		$root = sys_get_temp_dir() . '/kloudspeaker-viewer-' . bin2hex(random_bytes(4));
+		try {
+			$fileId = $this->fileFixture(110, 'viewer', $settings, $root);
+			$backend = $this->getBackend($settings);
+			$session = new Request($this->sessionId, 'get', 'filesystem', 'test-ip', array(), array(), NULL);
+			$backend->env()->initialize($session);
+			$item = $backend->env()->filesystem()->item($fileId);
+			$data = $backend->env()->plugins()->getPlugin('FileViewerEditor')->getController()->getItemContextData($item, array(), 'plugin-fileviewereditor', array());
+			$this->assertIsArray($data);
+			$this->assertArrayHasKey('edit', $data);
+			$this->assertArrayHasKey('view', $data);
+
+			$this->processRequest('GET', 'view/' . $fileId . '/content', array(), NULL, $settings);
+			try {
+				$this->processRequest('GET', 'view/' . $fileId . '/bogus', array(), NULL, $settings);
+				$this->fail('Unknown view actions must be rejected');
+			} catch (ServiceException $e) {
+				$this->assertSame('INVALID_REQUEST', $e->type());
+			}
+		} finally {
+			unlink($root . '/doc.txt');
+			rmdir($root);
+		}
+	}
 }

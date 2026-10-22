@@ -60,11 +60,18 @@ The checklist describes tested components, not whole-application certification.
 - Added backend/test/PluginTest.php (capture mailer, authenticated sessions via
   session id): all bundled plugins register; LostPassword, Registration (incl.
   admin approval/denial), Share (create/edit/list/public info/delete), Notificator
-  (admin services and event delivery), ItemCollection and SendViaEmail flows run
-  under E_ALL. Default suite: 138 tests, 831 assertions.
-- Plugin item 1 is still open for Comment, TrashBin, ItemDetails,
-  FileViewerEditor, EventLogging, Archiver/Watermarking service paths over
-  sessions, and Share public download/upload/key paths.
+  (admin services and event delivery), ItemCollection, SendViaEmail, Comment,
+  TrashBin (soft delete/restore/purge on temp folders), EventLogging and
+  FileViewerEditor (context data, view content) flows run under E_ALL.
+  Default suite: 142 tests, 871 assertions.
+- `FilesystemController::view()` read `$range[0]` on NULL (warning in PHP 8);
+  fixed with `??`, behavior unchanged. Its `else` branch (FileEvent::view) is
+  unreachable in PHP 7 and 8 alike, so plain views are never logged as events;
+  left as is pending a decision.
+- Plugin item 1 is still open for ItemDetails (client only), Archiver/
+  Watermarking service paths over sessions, and Share public
+  download/upload/key paths. EventLogging item filters use MySQL-only SQL
+  (CONCAT/INSTR) and unescaped request values; pre-existing, admin-only.
 - Pre-existing (PHP 7 too), fixed: three bare `invalidRequestException()` calls in
   FilesystemServices (fatal undefined function instead of INVALID_REQUEST).
 - Pre-existing (PHP 7 too), not fixed: an unauthenticated permission check builds
