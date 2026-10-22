@@ -111,30 +111,41 @@ The checklist describes tested components, not whole-application certification.
   can be retried. Still open: MySQL/PostgreSQL upgrade rehearsal (PostgreSQL has
   no update scripts and its params.sql records `2_0`), plugin upgrade paths, and
   rollback of a failed upgrade on a real file database copy.
+- Item 3, MySQL: MysqlSchemaIntegrationTest.php (run by the database profile via
+  backend/test/phpunit.database.xml) installs the full schema plus every bundled
+  plugin's tables into a prefixed set of tables, logs the new admin in through the
+  real backend, and upgrades a 2_6_7-state schema to 2_7_28 with every item id and
+  level preserved; each test drops its own tables.
+- Item 3, PostgreSQL (confirmed on PostgreSQL 17.11): `PostgresqlDatabase` has no
+  `execSqlFile`, there is no PostgreSQL installer or update script, and
+  db/postgresql/sql/install/*.sql is MySQL syntax (backticks, `ENGINE`,
+  `auto_increment`) for an obsolete schema (`user.password`, version `2_0`);
+  applying it fails with a syntax error. A PostgreSQL deployment cannot be
+  installed from this repository today. Needs a product decision: reject the type
+  with an actionable configuration error (like SQLite2) or author and certify a
+  real schema, installer and upgrade path.
+
 - Pre-existing (PHP 7 too), fixed: three bare `invalidRequestException()` calls in
   FilesystemServices (fatal undefined function instead of INVALID_REQUEST).
 
 ### Recorded Verification
 
-The last implementation checkpoint passed on PHP 8.2.35:
+The latest verified run (2026-10-22, PHP 8.2.35 in the Docker runners) passed:
 
 | Gate | Recorded result |
 | --- | --- |
-| Default PHPUnit suite | 123 tests, 688 assertions; normal and randomized seed 82 |
-| MySQL integration | 14 tests, 64 assertions |
-| PostgreSQL integration | 9 tests, 55 assertions |
+| Default PHPUnit suite | 157 tests, 997 assertions (includes plugin, installer/updater and real-HTTP tests) |
+| MySQL integration (MariaDB 11.4.13) | 16 tests, 101 assertions (adapter contracts plus full-schema install and 2_6_7 to 2_7_28 upgrade) |
+| PostgreSQL integration | 9 tests, 55 assertions (adapter contracts only) |
 | SMTP capture integration | 8 tests, 120 assertions |
-| Total | 154 tests, 927 assertions |
-| Standalone compatibility checks | Passed |
-| All shipped backend PHP lint | 374 files, no diagnostics, no exclusions |
+| Total | 190 tests, 1273 assertions |
+| Standalone compatibility checks | Passed (first step of the default runner) |
+| Backend PHP lint | 202 non-vendor files, no diagnostics, on the local PHP 8.2.12 (vendor not re-linted) |
 
-These results were not rerun while saving this checkpoint. All disposable test
-servers/networks were removed. No production data/configuration was modified,
-and no commits or deployments were made by the assistant. Migration changes
-remain in the working tree; documentation alone is not a backup of those changes.
-Preserve the workspace or make a reviewed Git checkpoint before moving machines
-or discarding this working tree. Do not blindly commit configuration secrets or
-managed user data.
+All disposable test servers/networks were removed after the profile runs. No
+production data/configuration was modified, and nothing was deployed. The
+assistant's changes are committed in Git (see `git log`); configuration secrets
+and managed user data must still not be committed.
 
 ### Restart Procedure
 
@@ -166,11 +177,11 @@ configuration file or contact production services.
 
 | Configuration | Current verification |
 | --- | --- |
-| `mysql` | MySQLi adapter contracts on MariaDB 11.4.13 |
+| `mysql` | MySQLi adapter contracts, fresh install and 2_6_7 to 2_7_28 upgrade on MariaDB 11.4.13 |
 | `pdo` with MySQL DSN | PDO MySQL adapter contracts on MariaDB 11.4.13 |
 | `pdo` with SQLite DSN | In-memory service, SQL error, and rollback regressions |
 | `sqlite3` | In-memory native SQLite result, SQL error, and transaction regressions |
-| `postgresql` | Adapter contracts on PostgreSQL 17.11; full schema/install/upgrade still unverified |
+| `postgresql` | Adapter contracts on PostgreSQL 17.11; **not installable**: no install tooling, and the shipped SQL is obsolete MySQL-syntax (see item 3 notes) |
 | `sqlite` | Obsolete SQLite2 format: rejected before opening the database file |
 
 Other database-server versions, deployment schemas, and custom plugins have not

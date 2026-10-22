@@ -59,8 +59,7 @@ services:
       - php
       - /opt/test-tools/vendor/bin/phpunit
       - --configuration
-      - /workspace/backend/test/phpunit.xml
-      - /workspace/backend/test/DatabaseIntegrationTest.php
+      - /workspace/backend/test/phpunit.database.xml
 
   postgres:
     image: postgres:17-alpine@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24

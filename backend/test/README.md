@@ -213,3 +213,13 @@ a temporary SQLite file seeded from the shipped schema and each plugin's install
 r.php keeps its production error handler, so any PHP diagnostic fails a request with
 HTTP 500. Tests compare uploaded and downloaded bytes by checksum and use only
 temporary directories. Start new HTTP tests from Kloudspeaker_HttpTestCase.
+
+## MySQL Schema Checks
+
+The database profile now runs phpunit.database.xml: DatabaseIntegrationTest.php
+(adapter contracts) and MysqlSchemaIntegrationTest.php (full-schema fresh install
+with all plugin tables, admin login through the real backend, and the 2_6_7 to
+2_7_28 upgrade). Each schema test uses a random table prefix inside the temporary
+MariaDB database and drops its tables afterwards. PostgreSQL has no equivalent:
+the shipped PostgreSQL install SQL is obsolete MySQL syntax (see
+PHP82-MIGRATION.md).
