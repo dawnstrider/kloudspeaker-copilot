@@ -16,6 +16,7 @@
             <file>PdfWatermarkTest.php</file>
             <file>ArchiveTest.php</file>
             <file>PluginTest.php</file>
+            <file>InstallerTest.php</file>
         </testsuite>
     </testsuites>
     <php>

@@ -73,8 +73,24 @@ The checklist describes tested components, not whole-application certification.
   `FilesystemController::download()` null reads fixed like `view()`. Public upload
   needs a real HTTP multipart request and is still unverified.
 - Plugin item 1 remains open only for upload-based flows (they need item 4's real
-  HTTP/multipart harness); ItemDetails has no server code. EventLogging item filters use MySQL-only SQL
-  (CONCAT/INSTR) and unescaped request values; pre-existing, admin-only.
+  HTTP/multipart harness); ItemDetails has no server code.
+- Item 2 progress: backend/test/InstallerTest.php runs a fresh PDO/SQLite install
+  (schema, params, every bundled plugin's install.sql, admin user) against a temp
+  file and logs the admin in through the real backend; it also drives the updater's
+  plugin-install step. Fixed `strcmp(null, ...)` in `UpdateController::updatePlugin`
+  (8.1 deprecation whenever a plugin is not yet installed). Added
+  backend/install/RuntimePreflight.class.php (PHP >= 8.2, mbstring, json, and the
+  driver extension for the chosen database type), called from the MySQL, PDO and
+  SQLite installers' `checkSystem()`; web-SAPI vs CLI must still be checked on the
+  host. Default suite: 148 tests, 915 assertions; all 202 non-vendor backend PHP
+  files lint clean on PHP 8.2.12.
+- Found for item 3, not changed (schema/version declarations need approval): a
+  fresh PDO install writes version `2_7_28` (params.sql) but the PDO
+  `DatabaseUtil::getVersionHistory()` only lists `2_6_7` (SQLite lists up to
+  `2_7_14`, MySQL up to `2_7_28`), so the updater reports an up-to-date PDO or
+  SQLite install as needing an update and then stops with "Unknown version". The
+  PostgreSQL params.sql records `2_0`. Upgrade paths 2_6_7 to 2_7_28 are untested:
+  no old-schema fixtures exist.
 - Pre-existing (PHP 7 too), fixed: three bare `invalidRequestException()` calls in
   FilesystemServices (fatal undefined function instead of INVALID_REQUEST).
 - Pre-existing (PHP 7 too), not fixed: an unauthenticated permission check builds

@@ -10,6 +10,7 @@
 	 */
 
 	require_once("install/KloudspeakerInstallProcessor.class.php");
+require_once("install/RuntimePreflight.class.php");
 	require_once("include/ServiceEnvironment.class.php");
 	require_once("db/pdo/PDODatabase.class.php");
 	require_once("db/pdo/DatabaseUtil.class.php");
@@ -158,7 +159,7 @@
 		}
 		
 		private function checkSystem() {
-			//TODO
+			Kloudspeaker_RuntimePreflight::assertUsable($this->processor, "pdo");
 			
 			/*if (!function_exists('mysqli_connect')) {
 				$this->processor->setError("MySQL not detected", "Kloudspeaker cannot be installed to this system when MySQL is not available. Check your system configuration or choose different configuration type.");

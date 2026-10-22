@@ -144,7 +144,7 @@ class UpdateController {
 		$current = $plugin->version();
 		$versionHistory = $plugin->versionHistory();
 
-		if (strcmp($installed, $current) == 0) {
+		if (strcmp((string) $installed, $current) == 0) {
 			return;
 		}
 

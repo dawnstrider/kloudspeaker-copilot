@@ -10,6 +10,7 @@
  */
 
 require_once "install/KloudspeakerInstallProcessor.class.php";
+require_once "install/RuntimePreflight.class.php";
 require_once "include/ServiceEnvironment.class.php";
 require_once "db/sqlite/DatabaseUtil.class.php";
 require_once "install/sqlite/SQLiteInstallUtil.class.php";
@@ -152,6 +153,8 @@ class SQLiteInstaller {
 	}
 
 	private function checkSystem() {
+		Kloudspeaker_RuntimePreflight::assertUsable($this->processor, strcasecmp($this->type, "sqlite3") == 0 ? "sqlite3" : NULL);
+
 		if (strcasecmp($this->type, "sqlite3") == 0) {
 			try {
 				new SQLite3(":memory:"); //try to create SQLite3 instance to see if it is installed

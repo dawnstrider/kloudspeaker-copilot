@@ -10,6 +10,7 @@
  */
 
 require_once "install/KloudspeakerInstallProcessor.class.php";
+require_once "install/RuntimePreflight.class.php";
 require_once "include/ServiceEnvironment.class.php";
 require_once "db/mysql/DatabaseUtil.class.php";
 require_once "install/mysql/MySQLInstallUtil.class.php";
@@ -168,6 +169,8 @@ class MySQLInstaller {
 	}
 
 	private function checkSystem() {
+		Kloudspeaker_RuntimePreflight::assertUsable($this->processor, "mysql");
+
 		if (!function_exists('mysqli_connect')) {
 			$this->processor->setError("MySQL not detected", "Kloudspeaker cannot be installed to this system when MySQL is not available. Check your system configuration or choose different configuration type.");
 			$this->processor->showPage("install_error");
